@@ -13,9 +13,11 @@ Shared, published research for the team. Everything here is a **living document*
 | 05 | [Escalation framework literature](05-escalation-framework-literature.md) | Is there consensus? The three lineages (AI Control, runtime enforcement, governance) with the papers and diagrams to build on | ✅ |
 | 06 | [Framework v0](06-framework-v0.md) | Our escalation framework: principles, objects, hard triggers, judge, S0–S4 ladder mapped to HappyRobot levers, voice specifics, demo scenario, open decisions | 🟡 ideation draft — open decisions in §10 |
 | 07 | [Risk vector](07-risk-vector.md) | Deep dive on scoring: impact × suspicion matrix, tool registry, noisy-OR signals, worked examples, calibration plan | 🟡 v0.1 — weights are placeholders |
+| 08 | [Deployment](08-deployment.md) | What PhoneFlow's backend needs and three ways to run it (managed media + cheap compute · one VPS · laptop + tunnels); how it combines with HappyRobot | 🟡 decision needed: pick option A |
+| 09 | [PhoneFlow model I/O](09-phoneflow-model-io.md) | Everything that flows into/out of the LLM in `apps/voice-agent`: prompt assembly, tools, transitions, data requests, hook points for the guard | 🟡 being written by a research agent |
 | — | [`happyrobot-api-v2.openapi.json`](happyrobot-api-v2.openapi.json) | Raw public spec (800 KB) | snapshot 2026-09-18 |
 
-Code lives one level up: [`hr_watch.py`](../hr_watch.py) (all-layers watcher).
+Code lives one level up: [`hr_watch.py`](../hr_watch.py) (all-layers watcher) and [`phoneflow/`](../phoneflow/) (project base, mirrored from getphoneflow/phoneflow).
 
 ## One-paragraph thesis
 
@@ -30,3 +32,4 @@ Every open-source runtime auditor (Microsoft AGT, Invariant, LlamaFirewall, Open
 ## Changelog
 
 - 2026-09-18 — initial publication (01–07, spec snapshot).
+- 2026-09-18 — PhoneFlow mirrored as project base; added 08-deployment, 09-phoneflow-model-io (in progress); Pages workflow.

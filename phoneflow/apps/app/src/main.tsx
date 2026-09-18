@@ -15,6 +15,8 @@ const queryClient = new QueryClient()
 
 const router = createRouter({
   routeTree,
+  // Serve from a sub-path (e.g. GitHub Pages project site) when Vite's `base` is set.
+  basepath: import.meta.env.BASE_URL,
   context: {
     queryClient,
   },
