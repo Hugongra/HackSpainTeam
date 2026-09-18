@@ -5,8 +5,11 @@ One folder per person. This is your scratch space: notes, experiments, things yo
 ```
 insights/
   _template/   ← copy this to start yours
-  daniel/
-  <your-name>/
+  hugo/        Hugo G. Grañena (@Hugongra)
+  claudia/     Claudia Agromayor (@ClaudiaAgromayor)
+  glenda/      @glendambo25
+  daniel/      Daniel Aguilera (@DanielAguileraICAI)
+  <your-name>/ ← anyone else (Luis?) — copy _template
 ```
 
 **Promotion rule:** when something in your folder becomes team knowledge (a decision, a verified fact, a design), move it into [`../knowledge/`](../knowledge/README.md) and add a changelog line there.
