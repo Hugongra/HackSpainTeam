@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "paths": {
+      "@workspace/shared/*": ["./src/*"]
+    }
+  },
+  "include": ["src"]
+}
