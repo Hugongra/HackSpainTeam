@@ -58,3 +58,29 @@ Behaviour of the default agent under our first red-team turns: refused the "igno
 1. Learn the Custom-LLM model id (UI once → API forever) and confirm the capture endpoint receives `messages[] + tools[]`.
 2. Drive the voice probe headlessly: `POST /voice/tokens/ {workflow_id}` → LiveKit room; inject `say`-synthesised speech with the LiveKit Python SDK → fully automated voice red-teaming.
 3. Turn `hr_probe_chat.py` into the red-team runner (scenario files) and start filling the ledger.
+
+## Update 00:55 — tool execution on a voice call, end to end (headless)
+
+Built on the voice probe via API only: prompt rewritten to collect company / city / availability / callback, a `tool` node `save_carrier_info` (4 agent-bound params) under the prompt node, and a Webhook **POST** action under the tool pointing at our tunnel. Headless caller (`hr_voice_probe.py`, macOS `say`) answered the questions; the agent called the tool, our server received it, the agent confirmed and hung up.
+
+**API gotchas that cost time (now solved):**
+- Publish blocker `"Tool Call Result has not been opened yet"` → `POST /versions/{v}/tools/{tool}/tool-call-result/inspect` (returns `ack_state: ack`); `is_complete` stays false but publish proceeds.
+- Webhook v2 `body.raw` must be a **string**; any `{{name.var}}` inside it is auto-parsed into paragraph blocks (on PUT, and on POST when it matches a tool name) and the runtime validator then rejects the array → publish 500. Plain `{{company}}` is left alone but **not resolved**. **Working pattern:** put variables in the **URL paragraph** as `{"type":"variable","children":[{"text":""}],"group_id":<tool node id>,"variable_id":"company"}` and keep `raw` brace-free. Never PUT an action node with a string body; delete+recreate via `POST nodes` instead (DELETE returned 400 on a tool's child — use a fresh fork).
+- Variables for tool params: group id = the tool node id, variable ids = parameter names (`available-vars` on the action node shows them).
+- Publishing the same version twice → `400 Version is already live`; always fork.
+
+**What the platform records for a tool execution (run `e7f9481b…`):**
+
+| Record | Content |
+|---|---|
+| Run node trace | ordered: Web Call → Inbound Voice Agent → **tool `save_carrier_info`** → **action `POST save to dispatch`** → Prompt; each with status/error; `edges[]` between outputs |
+| Tool node output | `input{}` = **exact arguments the model produced** (`company, city, available_at, callback_number`) + `__tool_call_id`; `data: null` |
+| Action node output | `data{}` = **our HTTP response body** (`{"ok": true}`) |
+| Message (assistant) | `content` = the spoken line; `tool_calls[]` = `{id, function:{name, arguments}}` with `arguments` including a `_message` field (what it says while calling) |
+| `_hangup` | also appears as a `tool_calls` entry on the last assistant message |
+| Session | `llm_model gpt-5.6-luna`, `stt_model nova-3-onprem-en`, `tts_model eleven_turbo_v2`, `duration 125` |
+| Recording | signed GCS URL under `happyrobot-livekit-recordings-eu`, available ~1–2 min after the call |
+| Credits | **25.76** for a 2-min voice call (Voice Orchestration 24.7, LLM 0.81, Run 0.25) — vs 3.39 for a 4-turn chat |
+| Silence handling | platform injects `<Thoughts>The user has been quiet…</Thoughts>` as **user** messages; agent repeats its question |
+
+For the guard this means: **tool arguments, tool results and hangups are all visible post-hoc with ids**, so self-report mismatch, arg-bounds and target checks can be computed from the API even without the inline position; the inline position is still the only place to *prevent* them.
