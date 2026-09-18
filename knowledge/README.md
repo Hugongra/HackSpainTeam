@@ -15,6 +15,7 @@ Shared, published research for the team. Everything here is a **living document*
 | 07 | [Risk vector](07-risk-vector.md) | Deep dive on scoring: impact × suspicion matrix, tool registry, noisy-OR signals, worked examples, calibration plan | 🟡 v0.1 — weights are placeholders |
 | 08 | [Deployment](08-deployment.md) | What PhoneFlow's backend needs and three ways to run it (managed media + cheap compute · one VPS · laptop + tunnels); how it combines with HappyRobot | 🟡 decision needed: pick option A |
 | 09 | [PhoneFlow model I/O](09-phoneflow-model-io.md) | Everything that flows into/out of the LLM in `apps/voice-agent`: prompt assembly, tools, transitions, data requests, hook points for the guard | ✅ code-referenced; hook points in §5 |
+| 10 | [Guardian above HappyRobot](10-happyrobot-guardian-capabilities.md) | Need-by-need map of what HappyRobot's API gives a guardian: monitor inputs, monitor outputs, shut down (all levers), investigate impact, rogue-index signal sources, gaps, minimal architecture | ✅ from spec; verify with a key |
 | — | [`happyrobot-api-v2.openapi.json`](happyrobot-api-v2.openapi.json) | Raw public spec (800 KB) | snapshot 2026-09-18 |
 
 Code lives one level up: [`hr_watch.py`](../hr_watch.py) (all-layers watcher) and [`angryrobots/`](../phoneflow/) (project base **AngryRobots**, forked from getphoneflow/phoneflow).
@@ -34,3 +35,4 @@ Every open-source runtime auditor (Microsoft AGT, Invariant, LlamaFirewall, Open
 - 2026-09-18 — initial publication (01–07, spec snapshot).
 - 2026-09-18 — PhoneFlow mirrored as project base; added 08-deployment, 09-phoneflow-model-io (in progress); Pages workflow.
 - 2026-09-18 — renamed project base folder phoneflow/ → angryrobots/; 09 published.
+- 2026-09-19 — added 10 (guardian-above-HappyRobot capability map); notebook thesis: *the anger-management layer for your agents*.
