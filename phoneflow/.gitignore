@@ -1,0 +1,12 @@
+node_modules
+dist
+
+.tanstack
+
+coverage
+logs
+
+.env
+.env.local
+
+.DS_Store
