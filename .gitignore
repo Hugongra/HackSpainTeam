@@ -21,3 +21,6 @@ build/
 # hr_watch local state
 hr_watch.sqlite
 hr_watch.jsonl
+
+# raw API dumps from hr_explore (org data)
+explore/
