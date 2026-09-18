@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: angryrobot
+    runtime: python
+    rootDir: angryrobot
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      # Los secretos se pegan en el panel de Render (sync: false = no están en el repo)
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: ANGRYROBOT_SHARED_SECRET
+        sync: false
+      - key: HAPPYROBOT_API_KEY
+        sync: false
