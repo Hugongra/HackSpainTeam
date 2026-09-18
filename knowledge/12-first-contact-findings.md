@@ -84,3 +84,12 @@ Built on the voice probe via API only: prompt rewritten to collect company / cit
 | Silence handling | platform injects `<Thoughts>The user has been quiet…</Thoughts>` as **user** messages; agent repeats its question |
 
 For the guard this means: **tool arguments, tool results and hangups are all visible post-hoc with ids**, so self-report mismatch, arg-bounds and target checks can be computed from the API even without the inline position; the inline position is still the only place to *prevent* them.
+
+## Update 01:10 — telephony blocker (outbound calls to a real phone)
+
+- Outbound needs an org-owned number **with a SIP trunk**: `POST /workflows/ {from_template: voice-agent}` → `400 Required credentials for template "voice-agent" are not configured` until one exists.
+- `POST /phone-numbers/ {provider: twilio, country_code: US, phone_number_type: local, number_type: regular}` **buys the number but the embedded trunk creation fails**: `400 Failed to create SIP trunk`, deterministic (two attempts, `force: true`). Result: numbers listed with `sip_trunk_status: none`, `has_sip_trunk_in_preferred_region: false` — looks like EU-region SIP is not provisioned for this org.
+- `POST /phone-numbers/sip-trunk` is unusable: the spec declares `phone_number_id` as a *path* param on a path without a placeholder; body, query, `/{id}/sip-trunk` and `/sip-trunk/{id}` all fail (400 "received undefined" / 404). Same pattern for `delete-number` / `free-up-number`.
+- `POST /sip-trunks/` (BYO) requires a SIP server address + credentials → needs a Twilio Elastic SIP trunk or Telnyx account on our side.
+- **Ways forward:** (a) HappyRobot mentors enable telephony for Team 10's EU org (fastest, and report the route bug); (b) self-serve BYO trunk via a Twilio trial (trial can only call *verified* numbers — fine for our own phones) → `POST /sip-trunks/ {provider: twilio, number, address: <trunk>.pstn.twilio.com, auth_username, auth_password, direction: both}`; (c) keep using **web calls** (already fully working incl. tools, recording, transcripts) for human-in-the-loop tests.
+- Numbers bought (recurring cost — release when done): `+1 640 221 4277` (`PNfad6822…`), `+1 502 750 9849`.
