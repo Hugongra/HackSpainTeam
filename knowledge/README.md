@@ -1,0 +1,32 @@
+# Knowledge base — HackSpain '26 · HappyRobot track
+
+Shared, published research for the team. Everything here is a **living document**: edit in place, keep the numbering, and add a line to the changelog at the bottom when you change something material.
+
+## Read in this order
+
+| # | Doc | What it answers | Status |
+|---|---|---|---|
+| 01 | [HappyRobot watcher & API](01-happyrobot-watcher-and-api.md) | How we get data out of HappyRobot: access model, object tree, the 7 transports, and the full **action surface** (what an agent can do, Tier 0–3) | ✅ researched from the public spec; needs a key to verify the realtime WS host |
+| 02 | [HappyRobot endpoints](02-happyrobot-endpoints.md) | All 179 v2 endpoints by tag; watcher-relevant table at the top | ✅ generated from spec |
+| 03 | [Rogue AI incidents map](03-rogue-ai-incidents-map.md) | 2024–26 incidents (destructive actions, hijacks, misalignment evals, containment breaches), cross-cutting patterns, existing escalation frameworks, implications | ✅ |
+| 04 | [AI auditing OSS landscape](04-ai-auditing-oss-landscape.md) | Which companies/labs ship open-source auditing frameworks, grouped by incident type; the voice-agent gap | ✅ |
+| 05 | [Escalation framework literature](05-escalation-framework-literature.md) | Is there consensus? The three lineages (AI Control, runtime enforcement, governance) with the papers and diagrams to build on | ✅ |
+| 06 | [Framework v0](06-framework-v0.md) | Our escalation framework: principles, objects, hard triggers, judge, S0–S4 ladder mapped to HappyRobot levers, voice specifics, demo scenario, open decisions | 🟡 ideation draft — open decisions in §10 |
+| 07 | [Risk vector](07-risk-vector.md) | Deep dive on scoring: impact × suspicion matrix, tool registry, noisy-OR signals, worked examples, calibration plan | 🟡 v0.1 — weights are placeholders |
+| — | [`happyrobot-api-v2.openapi.json`](happyrobot-api-v2.openapi.json) | Raw public spec (800 KB) | snapshot 2026-09-18 |
+
+Code lives one level up: [`hr_watch.py`](../hr_watch.py) (all-layers watcher).
+
+## One-paragraph thesis
+
+Every open-source runtime auditor (Microsoft AGT, Invariant, LlamaFirewall, OpenAI Guardrails, Aegis) assumes a text/tool-call loop it can proxy; **none cover voice agents**. HappyRobot's *Custom LLM* mode puts us inline before TTS and before every tool call, and its API exposes every layer (run → node → session → message → audit). We build the detection → escalation → containment layer for voice + tool-using agents, scored with an impact × suspicion risk vector and enforced with HappyRobot's own levers (resample, hold, transfer, takeover, cancel, unpublish).
+
+## Conventions
+
+- Facts from a source get a link; claims we haven't verified get a ⚠️.
+- Decisions go in `06-framework-v0.md §10` until closed, then into the body.
+- Personal notes, experiments and half-formed ideas go in [`../insights/<you>/`](../insights/), not here. Promote to `knowledge/` once the team agrees.
+
+## Changelog
+
+- 2026-09-18 — initial publication (01–07, spec snapshot).
