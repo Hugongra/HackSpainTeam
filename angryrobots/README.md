@@ -4,11 +4,6 @@
 
 ---
 
-# PhoneFlow - The Open Source Voice Agent Platform
-
-Build voice agents by connecting nodes, deploy them to handle inbound and outbound phone calls, and monitor every call and its cost.
-
-[<img src="https://img.youtube.com/vi/2oKsQKwafv4/sddefault.jpg" alt="Video" style="width: 100%;">](https://www.youtube.com/watch?v=2oKsQKwafv4 "Watch the video")
 
 ## Features
 
