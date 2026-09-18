@@ -1,3 +1,9 @@
+# AngryRobots — voice-agent platform with built-in escalation & containment
+
+> Fork of [PhoneFlow](https://github.com/getphoneflow/phoneflow) (Apache-2.0, © PhoneFlow authors) by the HackSpain '26 team. Upstream sync from the repo root: `git subtree pull --prefix=angryrobots https://github.com/getphoneflow/phoneflow main --squash`. Original README follows.
+
+---
+
 # PhoneFlow - The Open Source Voice Agent Platform
 
 Build voice agents by connecting nodes, deploy them to handle inbound and outbound phone calls, and monitor every call and its cost.

@@ -1,10 +1,10 @@
 # Deployment — where PhoneFlow's backend can run
 
-*2026-09-18. PhoneFlow (`phoneflow/`, mirrored from getphoneflow/phoneflow@40db1ad) is our project base. The frontend goes to GitHub Pages via `.github/workflows/pages.yml`; this doc is about everything else.*
+*2026-09-18. **AngryRobots** (`angryrobots/`, our fork of PhoneFlow — getphoneflow/phoneflow@40db1ad) is our project base. The frontend goes to GitHub Pages via `.github/workflows/pages.yml`; this doc is about everything else.*
 
 ## What actually has to run
 
-From `phoneflow/apps/*`, `packages/db`, `infra/*` and the `.env.example`s:
+From `angryrobots/apps/*`, `packages/db`, `infra/*` and the `.env.example`s:
 
 | Component | What it is | Needs |
 |---|---|---|

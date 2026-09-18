@@ -1,4 +1,4 @@
-# Builds the PhoneFlow frontend (phoneflow/apps/app) and deploys it to GitHub Pages.
+# Builds the AngryRobots (PhoneFlow fork) frontend (angryrobots/apps/app) and deploys it to GitHub Pages.
 #
 # One-time setup (needs repo admin): Settings → Pages → Build and deployment →
 # Source: "GitHub Actions". Then set a repository variable VITE_API_URL pointing
@@ -9,10 +9,10 @@ on:
   push:
     branches: [main]
     paths:
-      - "phoneflow/apps/app/**"
-      - "phoneflow/packages/ui/**"
-      - "phoneflow/packages/shared/**"
-      - "phoneflow/pnpm-lock.yaml"
+      - "angryrobots/apps/app/**"
+      - "angryrobots/packages/ui/**"
+      - "angryrobots/packages/shared/**"
+      - "angryrobots/pnpm-lock.yaml"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: phoneflow
+        working-directory: angryrobots
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -40,10 +40,10 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: phoneflow/pnpm-lock.yaml
+          cache-dependency-path: angryrobots/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - name: Build frontend
-        working-directory: phoneflow/apps/app
+        working-directory: angryrobots/apps/app
         env:
           # Project sites are served from /<repo>/; a *.github.io repo is served from /.
           BASE_PATH: ${{ endsWith(github.event.repository.name, '.github.io') && '/' || format('/{0}/', github.event.repository.name) }}
@@ -56,7 +56,7 @@ jobs:
           cp dist/index.html dist/404.html   # SPA fallback for client-side routes
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: phoneflow/apps/app/dist
+          path: angryrobots/apps/app/dist
 
   deploy:
     needs: build
