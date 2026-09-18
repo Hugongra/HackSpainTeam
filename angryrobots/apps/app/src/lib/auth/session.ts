@@ -6,8 +6,14 @@ export function sessionQueryOptions() {
   return queryOptions({
     queryKey: ["session"],
     queryFn: async () => {
-      const { data } = await getSession()
-      return data
+      try {
+        const { data } = await getSession()
+        return data
+      } catch {
+        // Backend unreachable (e.g. static preview without an API): treat as
+        // signed out so the app renders the sign-in flow instead of an error.
+        return null
+      }
     },
   })
 }
