@@ -392,6 +392,8 @@ def cmd_listen(a):
     from http.server import BaseHTTPRequestHandler, HTTPServer
     c = db()
 
+    reply_mode = a.reply  # how /v1/chat/completions answers: silent | say | openai
+
     class H(BaseHTTPRequestHandler):
         def do_POST(self):
             n = int(self.headers.get("Content-Length") or 0)
@@ -400,16 +402,54 @@ def cmd_listen(a):
             except ValueError: body = {"raw": raw}
             evt = {"id": f"{time.time():.6f}", "path": self.path, "headers": dict(self.headers), "body": body,
                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S")}
-            say("event", upsert(c, "event", evt), evt["id"], f"{self.path} {json.dumps(body)[:120]}")
+            is_llm = self.path.rstrip("/").endswith("/chat/completions")
+            layer = "llm_request" if is_llm else "event"
+            summary = (f"{len(body.get('messages', []))} msgs, tools={[t.get('function', {}).get('name') for t in body.get('tools', [])]}, "
+                       f"stream={body.get('stream')}, hdrs={[h for h in self.headers.keys() if h.lower().startswith('x-') or h.lower() in ('authorization', 'user-agent')]}")
+            say(layer, upsert(c, layer, evt), evt["id"], summary if is_llm else f"{self.path} {json.dumps(body)[:120]}")
             c.commit()
+            if not is_llm:
+                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
+                self.wfile.write(b'{"ok":true}'); return
+            # --- Custom-LLM capture: answer with a valid completion so the call keeps going ---
+            text, tool_calls = None, None
+            if reply_mode == "openai" and os.environ.get("OPENAI_API_KEY"):
+                fwd = {k: body[k] for k in ("messages", "tools", "temperature", "max_tokens") if k in body}
+                fwd["model"] = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"); fwd["stream"] = False
+                rq = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=json.dumps(fwd).encode(), headers={
+                    "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}", "Content-Type": "application/json"})
+                try:
+                    up = json.loads(urllib.request.urlopen(rq, timeout=60).read())
+                    msg = up["choices"][0]["message"]; text = msg.get("content"); tool_calls = msg.get("tool_calls")
+                except Exception as e:  # noqa: BLE001
+                    text = "Sorry, one moment."; print("   upstream error:", e)
+            elif reply_mode == "say":
+                text = os.environ.get("HR_SAY", "Hello, this is the AngryRobots guard speaking. I can hear you.")
+            else:
+                tool_calls = [{"id": "call_silent", "type": "function", "function": {"name": "_stay_silent", "arguments": "{}"}}]
+            msg = {"role": "assistant", "content": text}
+            if tool_calls: msg["tool_calls"] = tool_calls
+            resp = {"id": f"chatcmpl-{evt['id']}", "object": "chat.completion", "created": int(time.time()),
+                    "model": "angryrobots-capture", "choices": [{"index": 0, "message": msg, "finish_reason": "tool_calls" if tool_calls else "stop"}],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}
+            out = json.dumps(resp).encode()
+            if body.get("stream"):
+                # minimal SSE stream: one chunk with the whole message, then [DONE]
+                chunk = {"id": resp["id"], "object": "chat.completion.chunk", "created": resp["created"], "model": resp["model"],
+                         "choices": [{"index": 0, "delta": msg, "finish_reason": resp["choices"][0]["finish_reason"]}]}
+                self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
+                self.wfile.write(f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n".encode()); return
             self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
-            self.wfile.write(b'{"ok":true}')
-        do_PUT = do_POST
+            self.wfile.write(out)
         def do_GET(self):
+            if self.path.rstrip("/").endswith("/models"):
+                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
+                self.wfile.write(b'{"object":"list","data":[{"id":"angryrobots-capture","object":"model"}]}'); return
             self.send_response(200); self.end_headers(); self.wfile.write(b"hr_watch listening\n")
+        do_PUT = do_POST
         def log_message(self, *_): pass
 
-    print(f"— listening on http://0.0.0.0:{a.port}/hook  (point a workflow HTTP node here; use ngrok/cloudflared to expose)")
+    print(f"— listening on http://0.0.0.0:{a.port}  · /hook for workflow HTTP nodes · /v1/chat/completions captures Custom-LLM requests (reply={reply_mode})")
     HTTPServer(("0.0.0.0", a.port), H).serve_forever()
 
 
@@ -443,7 +483,10 @@ def main():
     r.add_argument("channel", choices=["runs_firehose", "run_detail", "conversations_org", "conversation_group", "adversarial_test"])
     r.add_argument("--use-case"); r.add_argument("--run"); r.add_argument("--group"); r.add_argument("--test-run")
     r.set_defaults(fn=cmd_realtime)
-    l = sp.add_parser("listen"); l.add_argument("--port", type=int, default=8787); l.set_defaults(fn=cmd_listen)
+    l = sp.add_parser("listen"); l.add_argument("--port", type=int, default=8787)
+    l.add_argument("--reply", choices=["silent", "say", "openai"], default="say",
+                   help="how /v1/chat/completions answers: _stay_silent tool call, a fixed sentence (HR_SAY), or forward to OpenAI (OPENAI_API_KEY)")
+    l.set_defaults(fn=cmd_listen)
     t = sp.add_parser("sql"); t.add_argument("sql"); t.set_defaults(fn=cmd_sql)
     g = sp.add_parser("get"); g.add_argument("path"); g.add_argument("param", nargs="*", help="k=v query params"); g.set_defaults(fn=cmd_get)
     a = p.parse_args()
