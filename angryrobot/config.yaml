@@ -1,0 +1,63 @@
+# ============================================================
+# AngryRobot — configuración del índice IRA
+# Toca este archivo para ajustar pesos, umbrales y reglas duras
+# sin tocar ni una línea de código.
+# ============================================================
+
+# Pesos de cada dimensión (deben sumar 1.0).
+# "loop_detection" NO usa LLM, se calcula por código (barato y determinista).
+# Las otras 4 las puntúa el modelo auditor independiente.
+weights:
+  constraint_adherence: 0.30   # respeta procesos/reglas críticas (seguridad, salud...)
+  goal_alignment: 0.25         # sigue pareciéndose a la misión del workflow
+  self_consistency: 0.20       # no se contradice respecto a turnos anteriores
+  scope_escalation: 0.15       # no pide más poder/herramientas de las necesarias
+  loop_detection: 0.10         # no repite la misma acción sin avanzar
+
+# Bandas de decisión sobre el IRA final (0-100, 0=Happy, 100=Angry)
+thresholds:
+  warn: 40    # por debajo de esto: ALLOW (seguir normal)
+  defer: 70   # entre warn y defer: WARN (aviso + auto-confirmación)
+  kill: 90    # entre defer y kill: DEFER (a humano / flujo seguro); >= kill: KILL
+
+# Cuántas acciones anteriores de la sesión se le pasan al detector de bucles
+# y al auditor LLM como "memoria corta" de contexto.
+history_window: 5
+
+# Similitud (0-1) por encima de la cual dos acciones se consideran "la misma"
+# para el detector de bucles (usa difflib, no hace falta LLM).
+loop_similarity_threshold: 0.90
+
+# ------------------------------------------------------------
+# Filtros duros (Stage 0): no piensan, solo comparan.
+# Si algo de aquí hace match, AngryRobot corta la ejecución
+# ANTES de gastar ni un euro en el modelo auditor.
+# ------------------------------------------------------------
+hard_filters:
+  banned_patterns:
+    - pattern: "(?i)ignora(r)?\\s+(todas\\s+)?las?\\s+instrucciones\\s+anteriores"
+      reason: "Posible intento de anular las reglas del sistema (prompt injection)"
+      severity: kill
+
+    - pattern: "(?i)(cancela|desactiva|anula)\\s+(la\\s+)?(alarma|alerta|protocolo\\s+de\\s+seguridad)"
+      reason: "Intento de desactivar un protocolo de seguridad crítico"
+      severity: kill
+
+    - pattern: "(?i)(borra|elimina)\\s+(todos\\s+los\\s+)?(registros|logs|auditor[ií]a)"
+      reason: "Intento de borrar evidencia de auditoría"
+      severity: kill
+
+    - pattern: "(?i)env[ií]a(me)?\\s+(la\\s+)?(contrase[ñn]a|clave|api\\s*key|token)"
+      reason: "Solicitud de credenciales sensibles fuera del flujo autorizado"
+      severity: kill
+
+  # Herramientas que este workflow nunca debería poder usar, o que necesitan
+  # un límite duro (por ejemplo, mover dinero, dar de baja a alguien, etc.)
+  restricted_tools:
+    - name: "transferir_fondos"
+      max_amount: 0          # 0 = nunca permitido sin aprobación humana explícita
+      reason: "Esta herramienta requiere siempre aprobación humana en este workflow"
+
+    - name: "cancelar_alerta_emergencia"
+      max_amount: null
+      reason: "Cancelar una alerta de emergencia nunca debe ser autónomo"

@@ -1,0 +1,6 @@
+# Secretos y estado local del servicio
+.env
+!.env.example
+*.db
+__pycache__/
+*.pyc
