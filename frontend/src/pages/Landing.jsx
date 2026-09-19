@@ -7,11 +7,37 @@ import { FlowDiagram } from "../console/Platform";
 
 const go = (hash) => () => { window.location.hash = hash; };
 
+/** True while the nav's vertical midline is over an element marked data-ground="dark" (hero, dark bands). */
+function useOverDarkGround(ref) {
+  const [dark, setDark] = React.useState(true);
+  React.useEffect(() => {
+    let raf = 0;
+    const check = () => {
+      raf = 0;
+      const el = ref.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const mid = r.top + r.height / 2;
+      const over = Array.from(document.querySelectorAll('[data-ground="dark"]'))
+        .some((g) => { const b = g.getBoundingClientRect(); return b.top <= mid && b.bottom >= mid; });
+      setDark(over);
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(check); };
+    check();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, [ref]);
+  return dark;
+}
+
 function Nav() {
+  const ref = React.useRef(null);
+  const onDark = useOverDarkGround(ref);
   return (
-    <div className="nav-shell">
-      <GlassPanel tone="dark" padding={0} style={{ display: "flex", alignItems: "center", gap: 24, padding: "10px 10px 10px 20px" }}>
-        <a href="#/" aria-label="AngryRobot home" style={{ display: "inline-flex" }}><Logo variant="lockup" tone="paper" height={22} /></a>
+    <div className={`nav-shell ${onDark ? "nav-shell--dark" : "nav-shell--light"}`}>
+      <div ref={ref} className="nav-pill">
+        <a href="#/" aria-label="AngryRobot home" style={{ display: "inline-flex" }}><Logo variant="lockup" tone={onDark ? "paper" : "ink"} height={22} /></a>
         <nav className="nav-links" aria-label="Sections">
           <a href="#how">How it audits</a>
           <a href="#ira">The IRA index</a>
@@ -20,17 +46,17 @@ function Nav() {
           <a href="#plug">Plug it in</a>
         </nav>
         <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
-          <Button variant="onDark" size="sm" onClick={go("#/console/signals")}>Signals</Button>
-          <Button size="sm" variant="inverse" onClick={go("#/console")}>Open console</Button>
+          <Button className="nav-secondary" variant={onDark ? "onDark" : "secondary"} size="sm" onClick={go("#/console/signals")}>Signals</Button>
+          <Button size="sm" variant={onDark ? "inverse" : "ink"} onClick={go("#/console")}>Open console</Button>
         </div>
-      </GlassPanel>
+      </div>
     </div>
   );
 }
 
 function Hero({ health }) {
   return (
-    <section className="hero">
+    <section className="hero" data-ground="dark">
       <div className="wrap hero-inner">
         <span className="ar-overline" style={{ color: "var(--text-on-dark-muted)" }}>The layer</span>
         <h1 className="ar-display" style={{ marginTop: 28, maxWidth: "13ch" }}>The anger management layer for your agents</h1>
@@ -148,7 +174,7 @@ function Proof() {
     ["human", "Dodged “are you a person?”, resampled", "DEFER"], ["control", "Honest agent, no alarms", "ALLOW"],
   ];
   return (
-    <section id="proof" className="band-dark">
+    <section id="proof" className="band-dark" data-ground="dark">
       <div className="wrap section split" style={{ alignItems: "center" }}>
         <div>
           <span className="ar-overline" style={{ color: "var(--text-on-dark-muted)" }}>Rogue lab</span>

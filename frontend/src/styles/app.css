@@ -59,6 +59,8 @@
 .ar-btn--ghost:active:not(:disabled){background:var(--accent-tint-strong)}
 .ar-btn--inverse{background:var(--ar-paper);color:var(--ar-black);border:1px solid transparent}
 .ar-btn--inverse:hover:not(:disabled){background:var(--ar-white)}
+.ar-btn--ink{background:var(--surface-inverse);color:var(--ar-paper);border:1px solid transparent}
+.ar-btn--ink:hover:not(:disabled){background:var(--ink-hover)}
 .ar-btn--onDark{background:transparent;color:var(--ar-paper);border:1px solid var(--border-on-dark)}
 .ar-btn--onDark:hover:not(:disabled){background:rgba(244,241,234,.08);border-color:rgba(244,241,234,.34)}
 .ar-btn--onDark:active:not(:disabled){background:rgba(244,241,234,.14)}
@@ -112,10 +114,23 @@ pre.code{margin:0;padding:18px 20px;background:var(--ar-black);color:var(--ar-pa
 
 /* ---- Landing ---- */
 .nav-shell{position:sticky;top:0;z-index:20;padding:14px clamp(12px,3vw,40px)}
+/* The nav is glass over dark grounds (hero, dark bands) and a solid Paper pill over light ones —
+   glass over flat Paper reads as a dirty grey and its Paper text vanishes. */
+.nav-pill{position:relative;display:flex;align-items:center;gap:24px;padding:10px 10px 10px 20px;border-radius:var(--radius-glass);
+  transition:background .25s ease,border-color .25s ease,box-shadow .25s ease,color .25s ease}
+/* Ink-tinted (not paper-tinted) so Paper text stays legible even when a light card scrolls under the pill. */
+.nav-shell--dark .nav-pill{background:rgba(16,17,16,.66);border:1px solid var(--glass-border);color:var(--glass-text);
+  backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);box-shadow:var(--glass-highlight),var(--glass-shadow)}
+.nav-shell--light .nav-pill{background:rgba(255,255,255,.88);border:1px solid var(--border-default);color:var(--text-strong);
+  backdrop-filter:var(--glass-blur-light);-webkit-backdrop-filter:var(--glass-blur-light);box-shadow:0 10px 30px rgba(16,17,16,.10)}
 .nav-links{display:flex;gap:26px;margin-left:12px}
-.nav-links a{color:var(--text-on-dark-muted);font-size:15px}
-.nav-links a:hover{color:var(--ar-paper);text-decoration:none}
+.nav-links a{font-size:15px;transition:color .2s ease}
+.nav-shell--dark .nav-links a{color:var(--text-on-dark-muted)}
+.nav-shell--dark .nav-links a:hover{color:var(--ar-paper);text-decoration:none}
+.nav-shell--light .nav-links a{color:var(--text-muted)}
+.nav-shell--light .nav-links a:hover{color:var(--text-strong);text-decoration:none}
 @media (max-width:860px){.nav-links{display:none}}
+@media (max-width:520px){.nav-pill{gap:12px;padding:8px 8px 8px 14px}.nav-secondary{display:none}}
 .hero{position:relative;margin-top:-76px;padding-top:76px;color:var(--ar-paper);overflow:hidden;
   background:linear-gradient(160deg,#2E5B46 0%,#1D3A2D 42%,#101110 100%)}
 .hero::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,rgba(244,241,234,.045) 0 1px,transparent 1px 120px),repeating-linear-gradient(0deg,rgba(244,241,234,.045) 0 1px,transparent 1px 120px)}
