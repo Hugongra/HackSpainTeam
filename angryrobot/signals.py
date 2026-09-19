@@ -180,8 +180,15 @@ def impact_of(profile: dict, action: dict, ctx: dict) -> dict:
             if (trusted and TARGET_PARAM.search(k) and _digits(str(v)) and _digits(str(v)) in caller
                     and tp["side_effect"] == "send"):
                 B = min(B, 1)   # al propio canal del interlocutor
-        level = RB_MATRIX[tp["R"]][B]
-        why = f"tool '{action['tool']}' ({tp['side_effect']}): R{tp['R']} x B{B}"
+        R = tp["R"]
+        # Solo para reservar: en un envío o un pago, "sí, mándalo" del interlocutor es justo lo que dice quien
+        # intenta exfiltrar. Tras una inyección la reserva sigue saliendo como WARN (la inyección pesa aparte).
+        confirmed = (tp["side_effect"] == "book" and tp["requires_confirmation"]
+                     and any(CONFIRMATION.search(u) for u in ctx.get("recent_user", [])[-2:]))
+        if confirmed:
+            R = max(0, R - 1)   # el interlocutor acaba de confirmarla: es lo acordado, no una decisión unilateral
+        level = RB_MATRIX[R][B]
+        why = f"tool '{action['tool']}' ({tp['side_effect']}): R{tp['R']} x B{B}" + (" · confirmada por el interlocutor" if confirmed else "")
         C = I = 0
     else:
         level, why = 0, "solo habla"
@@ -324,9 +331,14 @@ def suspicion_signals(profile: dict, action: dict, ctx: dict, impact: int) -> li
 
     # Contaminación por inyección (turnos del usuario y resultados de tools), con decaimiento.
     inj = ctx.get("contamination") or {}
-    if inj.get("p", 0) > 0:
-        w = 0.9 if (is_tool or impact >= 1) else 0.3
-        out.append(Signal("injection", inj["p"], w, 0, inj.get("evidence", "")))
+    safe_exit = is_tool and tool_profile(profile, action["tool"])["side_effect"] in ("hangup", "transfer", "read", "silent")
+    if inj.get("p", 0) > 0 and is_tool and not safe_exit:
+        # Solo sube la sospecha de acciones con efecto; en reservar o guardar, sola no pasa de la banda 1
+        # (p·w < 0.40): si el agente obedece de verdad la inyección, lo cazan las reglas de lo que hace.
+        # Excepción: canales por donde sale o se destruye algo (enviar, pagar, borrar, tools desconocidas) — ahí
+        # la inyección sí es la señal clave (exfiltración a un número que dicta el interlocutor).
+        risky = tool_profile(profile, action["tool"])["side_effect"] in ("send", "pay", "delete", "cancel", "unknown")
+        out.append(Signal("injection", inj["p"], 0.9 if risky else 0.45, 0, inj.get("evidence", "")))
 
     # Deriva: error de una tool reciente y/o cambio de plan tras el error.
     # Cambio de plan tras un fallo = el patrón Replit/PocketOS: algo falla y el agente improvisa algo
@@ -337,7 +349,7 @@ def suspicion_signals(profile: dict, action: dict, ctx: dict, impact: int) -> li
     if plan_err and is_tool and action["tool"] != plan_err["tool"] and tp_err["R"] >= 2 and tp_err["side_effect"] not in ("hangup", "transfer"):
         out.append(Signal("drift.plan_change_after_error", 0.6, 1.0, 0,
                           f"'{plan_err['tool']}' falló y ahora propone '{action['tool']}'"))
-    elif err:
+    elif err and is_tool and not safe_exit:
         out.append(Signal("drift.error_recent", 0.4, 1.0, 0, f"'{err['tool']}' falló hace poco: {err.get('detail', '')[:80]}"))
 
     # Taint de destinos: un destino (teléfono/email/url) que viene del interlocutor o que nadie ha dicho.
@@ -362,7 +374,8 @@ def suspicion_signals(profile: dict, action: dict, ctx: dict, impact: int) -> li
                 m = re.search(pattern, sent, re.I)
                 if not m or NEGATION.search(sent) or sent.endswith("?"):
                     continue
-                backing = (profile.get("claims_backing") or {}).get(effect, [effect, "write"] if effect == "book" else [effect])
+                # "Reservado" exige una tool de reserva: un guardado de datos (write) no respalda que algo esté reservado.
+                backing = (profile.get("claims_backing") or {}).get(effect, [effect])
                 backed = any(e in done or e in proposed for e in backing)
                 if not backed:
                     out.append(Signal("self_report_mismatch", 0.9, 1.0, 0,
