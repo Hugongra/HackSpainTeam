@@ -619,49 +619,57 @@ function BoardInner({ live, refreshKey, initial }) {
 
   if (!graph) return <p className="ar-small muted" style={{ padding: 24 }}>Laying out the board…</p>;
   return (
-    <div className={`board ${leftTab === "round" ? "is-round" : ""}`}>
-      <div className="board-left">
-        <div className="left-tabs" role="tablist">
-          <button role="tab" aria-selected={leftTab === "round"} className={leftTab === "round" ? "is-on" : ""} onClick={() => setLeftTab("round")}>Round</button>
-          <button role="tab" aria-selected={leftTab === "build"} className={leftTab === "build" ? "is-on" : ""} onClick={() => setLeftTab("build")}>Build</button>
-        </div>
-        {leftTab === "round" ? <RoundPanel live={live} onRound={setRound} />
-          : <Palette hasGuard={graph.nodes.some((n) => n.type === "guard")} providers={provs.data} onProvider={setProvider} />}
+    <div className="board-shell">
+      <div className="board-tabs" role="tablist">
+        <button role="tab" aria-selected={leftTab === "round"} className={leftTab === "round" ? "is-on" : ""} onClick={() => setLeftTab("round")}>Round</button>
+        <button role="tab" aria-selected={leftTab === "build"} className={leftTab === "build" ? "is-on" : ""} onClick={() => setLeftTab("build")}>Build</button>
       </div>
-      <div className="board-main">
-        <div className="board-canvas" ref={canvasRef} onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>
-          <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
-            onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} isValidConnection={isValid}
-            onNodeClick={(_, n) => setSel({ type: "node", id: n.id })} onEdgeClick={(_, e) => setSel({ type: "edge", id: e.id })} onPaneClick={() => setSel(null)}
-            fitView fitViewOptions={{ padding: 0.2 }} selectNodesOnDrag={false} proOptions={{ hideAttribution: true }} deleteKeyCode={["Backspace", "Delete"]}>
-            <Background gap={18} size={1} color="var(--ar-grey-300)" />
-            <MiniMap pannable zoomable style={{ width: 140, height: 90 }} nodeColor={(n) => (n.type === "guard" ? "#2E5B46" : n.type === "lever" ? "#D9C7A9" : "#ffffff")} />
-            <Controls showInteractive={false} />
-          </ReactFlow>
-          {issues.length > 0 && (
-            <div className="board-issues" role="status">
-              <Icon name="alert-triangle" size={16} />
-              <span>{issues.join(" · ")}</span>
-            </div>
-          )}
-          <div className="board-legend">
-            {!inRound && (live ? (
-              <>
-                <Button size="sm" onClick={() => setProvider("happyrobot")} iconLeft={<ProviderLogo id="happyrobot" size={14} />}>Sync HappyRobot</Button>
-                <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => controlAll("pause")}>Pause all</Button>
-                <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => controlAll("resume")}>Resume all</Button>
-                <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => { if (window.confirm("Kill every live run of every workflow?")) controlAll("kill"); }} iconLeft={<Icon name="octagon" size={14} />}>Kill all</Button>
-              </>
-            ) : (
-              <Button size="sm" variant="secondary" onClick={() => { window.location.hash = "#/console/settings"; }} iconLeft={<Icon name="plug" size={14} />}>Connect the service</Button>
-            ))}
-            <Button size="sm" variant="ghost" onClick={() => { if (inRound) { setRoundGraph(round ? { ...roundLayout(round.seats), roundId: round.id } : roundLayout([])); return; } localStorage.removeItem(STORE); setBuildGraph(seedGraph(wfs.data?.workflows || [])); }}>Reset layout</Button>
+
+      {inRound ? (
+        <div className="board-round">
+          <RoundPanel live={live} onRound={setRound} />
+        </div>
+      ) : (
+        <div className="board">
+          <div className="board-left">
+            <Palette hasGuard={graph.nodes.some((n) => n.type === "guard")} providers={provs.data} onProvider={setProvider} />
           </div>
-          {allErr && <div className="board-issues" style={{ top: 64 }}><Icon name="alert-triangle" size={16} /><span>{String(allErr.message || allErr)}</span></div>}
+          <div className="board-main">
+            <div className="board-canvas" ref={canvasRef} onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>
+              <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
+                onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} isValidConnection={isValid}
+                onNodeClick={(_, n) => setSel({ type: "node", id: n.id })} onEdgeClick={(_, e) => setSel({ type: "edge", id: e.id })} onPaneClick={() => setSel(null)}
+                fitView fitViewOptions={{ padding: 0.2 }} selectNodesOnDrag={false} proOptions={{ hideAttribution: true }} deleteKeyCode={["Backspace", "Delete"]}>
+                <Background gap={18} size={1} color="var(--ar-grey-300)" />
+                <MiniMap pannable zoomable style={{ width: 140, height: 90 }} nodeColor={(n) => (n.type === "guard" ? "#2E5B46" : n.type === "lever" ? "#D9C7A9" : "#ffffff")} />
+                <Controls showInteractive={false} />
+              </ReactFlow>
+              {issues.length > 0 && (
+                <div className="board-issues" role="status">
+                  <Icon name="alert-triangle" size={16} />
+                  <span>{issues.join(" · ")}</span>
+                </div>
+              )}
+              <div className="board-legend">
+                {live ? (
+                  <>
+                    <Button size="sm" onClick={() => setProvider("happyrobot")} iconLeft={<ProviderLogo id="happyrobot" size={14} />}>Sync HappyRobot</Button>
+                    <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => controlAll("pause")}>Pause all</Button>
+                    <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => controlAll("resume")}>Resume all</Button>
+                    <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => { if (window.confirm("Kill every live run of every workflow?")) controlAll("kill"); }} iconLeft={<Icon name="octagon" size={14} />}>Kill all</Button>
+                  </>
+                ) : (
+                  <Button size="sm" variant="secondary" onClick={() => { window.location.hash = "#/console/settings"; }} iconLeft={<Icon name="plug" size={14} />}>Connect the service</Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={() => { localStorage.removeItem(STORE); setBuildGraph(seedGraph(wfs.data?.workflows || [])); }}>Reset layout</Button>
+              </div>
+              {allErr && <div className="board-issues" style={{ top: 64 }}><Icon name="alert-triangle" size={16} /><span>{String(allErr.message || allErr)}</span></div>}
+            </div>
+            <TrafficStrip events={events} filter={filter} filterLabel={filterLabel} onClear={() => setSel(null)} loading={traffic.loading}
+                          onDisconnect={selEdge ? () => removeEdge(selEdge.id) : null} onOpenRun={openById} />
+          </div>
         </div>
-        <TrafficStrip events={events} filter={filter} filterLabel={filterLabel} onClear={() => setSel(null)} loading={traffic.loading}
-                      onDisconnect={selEdge ? () => removeEdge(selEdge.id) : null} onOpenRun={openById} />
-      </div>
+      )}
 
       <HappyRobotDialog open={provider === "happyrobot"} onClose={() => setProvider(null)} live={live} profiles={profiles} onConnected={placeWorkflows} />
       {selNode?.type === "connector" && <InputDrawer key={selNode.id} node={selNode} live={live} profiles={profiles} refreshKey={refreshKey}

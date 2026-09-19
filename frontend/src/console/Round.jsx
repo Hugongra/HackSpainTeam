@@ -329,22 +329,21 @@ export default function RoundPanel({ live, onRound }) {
   );
 
   return (
-    <div className="round">
-      <Card padding={16} eyebrow="NEW ROUND">
-        {round && !showOpts ? (
-          <div className="round-controls" style={{ marginTop: 0 }}>
-            <Button onClick={randomize} disabled={busy} iconLeft={<Icon name="refresh" size={16} />}>Randomize agents</Button>
-            <Button variant="ghost" size="sm" onClick={() => setShowOpts(true)}>Options</Button>
-            <span className="ar-caption muted" style={{ alignSelf: "center" }}>
-              {opts.n_agents} agents · rogue {opts.rogue === "pick" ? "chosen" : opts.rogue === "none" ? "none" : "coin"} · {opts.agents === "hr" ? "Real LLM" : "Forced LLM"}
-            </span>
-          </div>
-        ) : optionsForm}
-      </Card>
-      {err && <ErrorNote error={err} />}
-
-      {round && (
-        <>
+    <div className="round-page">
+      <div className="round-col round-col--control">
+        <Card padding={16} eyebrow="NEW ROUND">
+          {round && !showOpts ? (
+            <div className="round-controls" style={{ marginTop: 0 }}>
+              <Button onClick={randomize} disabled={busy} iconLeft={<Icon name="refresh" size={16} />}>Randomize agents</Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowOpts(true)}>Options</Button>
+              <span className="ar-caption muted" style={{ alignSelf: "center" }}>
+                {opts.n_agents} agents · rogue {opts.rogue === "pick" ? "chosen" : opts.rogue === "none" ? "none" : "coin"} · {opts.agents === "hr" ? "Real LLM" : "Forced LLM"}
+              </span>
+            </div>
+          ) : optionsForm}
+        </Card>
+        {err && <ErrorNote error={err} />}
+        {round && (
           <Card padding={16} className="round-sticky" eyebrow={`ROUND ${round.id} · ${round.status.toUpperCase()}`}>
             <div className="round-truth">
               {truth.hidden ? <Badge tone="sand">Malicious agent hidden until the end</Badge>
@@ -364,35 +363,44 @@ export default function RoundPanel({ live, onRound }) {
               <p className="ar-caption muted" style={{ marginTop: 8 }}>{hrEv.kind === "hr_error" ? "⚠ " : ""}{hrEv.text}</p>
             )}
           </Card>
+        )}
+        {!round && <p className="ar-caption muted" style={{ padding: "4px 4px 0" }}>Pick how many agents, whether one of them is malicious (a coin, none, or you choose which and what it does), and the speed. AngryRobot watches every agent without knowing.</p>}
+      </div>
 
-          <Card padding={14} eyebrow="IRA OF EVERY ACTION">
-            <IraMap round={round} selected={shown?.i} onSelect={setPinned} />
-          </Card>
+      <div className="round-col round-col--main">
+        {round ? (
+          <>
+            <Card padding={14} eyebrow="IRA OF EVERY ACTION">
+              <IraMap round={round} selected={shown?.i} onSelect={setPinned} />
+            </Card>
 
-          {shown && (
-            <Card padding={14} eyebrow={pinned != null ? "SELECTED ACTION" : "LAST ACTION"}>
-              {pinned != null && <Button size="sm" variant="ghost" style={{ float: "right", marginTop: -34 }} onClick={() => setPinned(null)}>Follow the latest</Button>}
-              <Decision ev={shown} events={events} round={round} />
-            </Card>
-          )}
+            {shown && (
+              <Card padding={14} eyebrow={pinned != null ? "SELECTED ACTION" : "LAST ACTION"}>
+                {pinned != null && <Button size="sm" variant="ghost" style={{ float: "right", marginTop: -34 }} onClick={() => setPinned(null)}>Follow the latest</Button>}
+                <Decision ev={shown} events={events} round={round} />
+              </Card>
+            )}
 
-          {outcome && (
-            <Card padding={16} eyebrow="OUTCOME" ground={outcome.met_expectation ? "paper" : "sand"}>
-              <Badge tone={(OUTCOME[outcome.label] || [])[0]}>{(OUTCOME[outcome.label] || [outcome.label])[1]}</Badge>
-              <p className="ar-small" style={{ marginTop: 10 }}>{outcome.summary}</p>
-            </Card>
-          )}
-          {round.status === "stopped" && !outcome && <p className="ar-caption muted">Round stopped before the end: it does not count in the stats.</p>}
-          {callEv && (
-            <Card padding={16} eyebrow="LAST TRIGGER · HAPPYROBOT CALL" ground={callEv.status === "sent" ? "paper" : "sunken"}>
-              <Badge tone={callEv.status === "sent" ? "positive" : callEv.status === "dialing" ? "info" : callEv.status === "failed" ? "negative" : "neutral"}>{callEv.status}</Badge>
-              <p className="ar-small" style={{ marginTop: 10 }}>{callEv.text}</p>
-            </Card>
-          )}
-        </>
-      )}
-      {!round && <p className="ar-caption muted" style={{ padding: "4px 4px 0" }}>Pick how many agents, whether one of them is malicious (a coin, none, or you choose which and what it does), and the speed. AngryRobot watches every agent without knowing.</p>}
-      <DataCard live={live} refreshKey={`${round?.id}-${round?.status}`} />
+            {outcome && (
+              <Card padding={16} eyebrow="OUTCOME" ground={outcome.met_expectation ? "paper" : "sand"}>
+                <Badge tone={(OUTCOME[outcome.label] || [])[0]}>{(OUTCOME[outcome.label] || [outcome.label])[1]}</Badge>
+                <p className="ar-small" style={{ marginTop: 10 }}>{outcome.summary}</p>
+              </Card>
+            )}
+            {round.status === "stopped" && !outcome && <p className="ar-caption muted">Round stopped before the end: it does not count in the stats.</p>}
+            {callEv && (
+              <Card padding={16} eyebrow="LAST TRIGGER · HAPPYROBOT CALL" ground={callEv.status === "sent" ? "paper" : "sunken"}>
+                <Badge tone={callEv.status === "sent" ? "positive" : callEv.status === "dialing" ? "info" : callEv.status === "failed" ? "negative" : "neutral"}>{callEv.status}</Badge>
+                <p className="ar-small" style={{ marginTop: 10 }}>{callEv.text}</p>
+              </Card>
+            )}
+          </>
+        ) : <p className="ar-caption muted" style={{ padding: "4px 4px 0" }}>The IRA of every action will show up here once a round starts.</p>}
+      </div>
+
+      <div className="round-col round-col--data">
+        <DataCard live={live} refreshKey={`${round?.id}-${round?.status}`} />
+      </div>
     </div>
   );
 }

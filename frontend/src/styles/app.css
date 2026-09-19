@@ -214,9 +214,20 @@ pre.code{margin:0;border-radius:var(--radius-md);padding:18px 20px;background:va
 .side-group{display:block;padding:18px 20px 6px;color:rgba(244,241,234,.42)}
 .mobile-nav .side-group{display:none}
 
-/* ---- Board (React Flow canvas, PhoneFlow-style builder) ---- */
+/* ---- Board shell: a tab bar (Round / Build) above either the Round dashboard (plain
+   scrolling page, no canvas) or the Build flow editor (React Flow, PhoneFlow-style). ---- */
 .console.is-board{height:100vh;overflow:hidden}
 .console.is-board .main{min-height:0}
+.board-shell{display:flex;flex-direction:column;flex:1;min-height:0}
+.board-tabs{display:flex;gap:4px;padding:10px 20px 0;border-bottom:1px solid var(--border-subtle);background:var(--surface-card);flex:none}
+.board-tabs button{border:0;background:transparent;padding:8px 14px;font:500 14px var(--font-sans);color:var(--text-muted);border-bottom:2px solid transparent;cursor:pointer}
+.board-tabs button.is-on{color:var(--text-strong);border-bottom-color:var(--ar-green)}
+.board-round{flex:1;min-height:0;overflow:auto;padding:20px clamp(16px,3vw,32px) 40px;display:flex;justify-content:center}
+.round-page{width:100%;max-width:1180px;display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:16px;align-items:start}
+.round-col{display:flex;flex-direction:column;gap:12px;min-width:0}
+.round-col--control{position:sticky;top:0}
+.round-col--data{grid-column:1 / -1}
+@media (max-width:1000px){.round-page{grid-template-columns:1fr}.round-col--control{position:static}}
 .board{display:grid;grid-template-columns:232px minmax(0,1fr);flex:1;min-height:0}
 .palette{border-right:1px solid var(--border-subtle);background:var(--surface-card);padding:18px 14px;display:flex;flex-direction:column;gap:6px;overflow:auto}
 .pal-item{display:flex;border-radius:var(--radius-sm);gap:10px;align-items:flex-start;padding:9px 10px;background:var(--surface-page);box-shadow:var(--shadow-hairline);cursor:grab;user-select:none}
@@ -317,14 +328,11 @@ pre.code{margin:0;border-radius:var(--radius-md);padding:18px 20px;background:va
 .plogo--mono{border-radius:6px;background:var(--ar-black);color:var(--ar-paper);font:600 12px var(--font-sans)}
 .bn--freight .plogo--mono,.bn--ink .plogo--mono{background:var(--ar-paper);color:var(--ar-black)}
 
-/* ---- Round tab (Board left column) ---- */
-.board.is-round{grid-template-columns:minmax(360px,420px) minmax(0,1fr)}
+/* ---- Round tab content (Round.jsx): the fallback single-card screens (not connected / outdated
+   service) only — the live two-column dashboard uses .round-page / .round-col above. ---- */
 .board-left{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--border-subtle);background:var(--surface-card)}
 .board-left .palette{border-right:0;flex:1}
-.left-tabs{display:flex;gap:4px;padding:10px 12px 0;border-bottom:1px solid var(--border-subtle)}
-.left-tabs button{border:0;background:transparent;padding:8px 12px;font:500 14px var(--font-sans);color:var(--text-muted);border-bottom:2px solid transparent;cursor:pointer}
-.left-tabs button.is-on{color:var(--text-strong);border-bottom-color:var(--ar-green)}
-.round{display:flex;flex-direction:column;gap:12px;padding:12px;overflow:auto;flex:1;min-height:0}
+.round{display:flex;flex-direction:column;gap:12px;padding:12px;overflow:auto;flex:1;min-height:0;max-width:520px}
 .round>*{flex:none}
 .round-sticky{position:sticky;top:-12px;z-index:3;box-shadow:var(--shadow-hairline),0 6px 12px -8px rgba(16,17,16,.25)}
 .round-form{display:flex;flex-direction:column;gap:12px}
@@ -368,7 +376,7 @@ pre.code{margin:0;border-radius:var(--radius-md);padding:18px 20px;background:va
 .bn.is-seat-killed{background:var(--ar-black);color:var(--ar-paper)}
 .bn.is-seat-killed .muted,.bn.is-seat-killed .bn-sub{color:var(--text-on-dark-muted)}
 .bn.is-seat-skipped{opacity:.5}
-@media (max-width:900px){.board.is-round{grid-template-columns:1fr}.board-left{border-right:0;border-bottom:1px solid var(--border-subtle)}.round{max-height:none}}
+@media (max-width:900px){.board-left{border-right:0;border-bottom:1px solid var(--border-subtle)}.round{max-height:none}}
 .speed{display:flex;flex-direction:column;gap:6px;margin-top:12px}
 .speed-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .speed input[type=range]{width:100%;accent-color:var(--ar-green)}
