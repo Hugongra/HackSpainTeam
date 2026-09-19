@@ -3,30 +3,27 @@
 import React from "react";
 import { Badge, Button, Card, Icon, Input, Logo, Select, Tabs, Toast, Verdict } from "../ds";
 import { ApiError, DEFAULT_API, api, settings } from "../api";
-import { DemoBanner, ErrorNote, RunDrawer, SEV, Signals, useAsync } from "./shared";
+import { ErrorNote, RunDrawer, SEV, Signals, useAsync } from "./shared";
 import { Escalations, WorkflowDetail, Workflows } from "./Platform";
-import { DEMO_RUNS } from "../demo";
 import Board from "./Board";
+import RunExplorer from "./RunExplorer";
+
+export const POLL_MS = 500;   // live refresh cadence for every view; requests never overlap (see useAsync)
 
 const NAV = [
   ["board", "Board", "gauge", "AngryRobot"],
+  ["runs", "Runs", "activity", "AngryRobot"],
   ["settings", "Settings", "settings", "AngryRobot"],
 ];
-const TITLES = { board: ["Connectors → guard → levers", "Board"], settings: ["Settings", "Connection & reference"] };
+const TITLES = { board: ["Connectors → guard → levers", "Board"], runs: ["One run at a time", "Runs"], settings: ["Settings", "Connection & reference"] };
 // Old deep links keep working: they open the Board with the matching drawer, or a Settings tab.
 const LEGACY = { workflows: { type: null }, escalations: { type: "node", id: "out-escalate" }, overview: { type: "node", id: "guard", tab: "alerts" },
-  runs: { type: "node", id: "guard", tab: "runs" }, try: { type: "node", id: "guard", tab: "try" } };
+  try: { type: "node", id: "guard", tab: "try" } };
 
 /* ---------------------------------------------------------------- data */
-function demoAlerts() {
-  return DEMO_RUNS.flatMap((r) => r.timeline.filter((e) => e.action && e.verdict !== "ALLOW").map((e) => ({
-    ...e, run_id: r.run_id, workflow: r.profile, persona: r.persona, ira_score: e.ira,
-  }))).sort((a, b) => SEV[b.verdict] - SEV[a.verdict] || b.ira_score - a.ira_score);
-}
-
 export function useData(live, refreshKey) {
-  const [runs] = useAsync(() => (live ? api.runs(50).then((d) => d.runs) : Promise.resolve(DEMO_RUNS.map(({ timeline, ...r }) => r))), [live, refreshKey]);
-  const [alerts] = useAsync(() => (live ? api.alerts(100).then((d) => d.alerts) : Promise.resolve(demoAlerts())), [live, refreshKey]);
+  const [runs] = useAsync(() => (live ? api.runs(50).then((d) => d.runs) : Promise.resolve([])), [live, refreshKey]);
+  const [alerts] = useAsync(() => (live ? api.alerts(100).then((d) => d.alerts) : Promise.resolve([])), [live, refreshKey]);
   return { runs, alerts };
 }
 
@@ -284,14 +281,16 @@ export default function Console({ view = "board", param = "" }) {
   const [toast, setToast] = React.useState(null);
   const nav = (v) => { window.location.hash = `#/console/${v}`; };
   const isSettings = view === "settings" || view === "connection" || view === "signals";
-  const key = isSettings ? "settings" : "board";
+  const key = isSettings ? "settings" : view === "runs" ? "runs" : "board";
   const [eyebrow, title] = TITLES[key];
   const initial = LEGACY[view]?.type ? LEGACY[view] : (view === "workflows" && param ? { type: "node", id: `in-${param}` } : null);
   const settingsTab = view === "signals" || param === "signals" ? "signals" : "connection";
 
+  // Live: poll every POLL_MS. Each useAsync coalesces ticks that arrive while its request is in flight,
+  // so a slow service just lowers the effective rate instead of piling up requests.
   React.useEffect(() => {
-    if (!live || key !== "board") return undefined;
-    const t = setInterval(() => setRefresh((n) => n + 1), 8000);
+    if (!live || key === "settings") return undefined;
+    const t = setInterval(() => setRefresh((n) => n + 1), POLL_MS);
     return () => clearInterval(t);
   }, [live, key]);
 
@@ -302,7 +301,7 @@ export default function Console({ view = "board", param = "" }) {
   ));
 
   return (
-    <div className={`console ${key === "board" ? "is-board" : ""}`}>
+    <div className={`console ${key !== "settings" ? "is-board" : ""}`}>
       <aside className="sidebar">
         <a href="#/" style={{ padding: "0 20px 26px", display: "inline-flex" }} aria-label="AngryRobot home"><Logo variant="lockup" tone="paper" height={20} /></a>
         <nav aria-label="Console">{links}</nav>
@@ -322,11 +321,15 @@ export default function Console({ view = "board", param = "" }) {
             <h2>{title}</h2>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
-            {key === "board" && <Button variant="secondary" size="sm" onClick={() => setRefresh((n) => n + 1)} iconLeft={<Icon name="refresh" size={16} />}>Refresh</Button>}
+            {key !== "settings" && (live
+              ? <span className="ar-caption muted" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span className="live-dot" />live · {POLL_MS} ms</span>
+              : <Button variant="secondary" size="sm" onClick={() => nav("settings")} iconLeft={<Icon name="plug" size={16} />}>Connect the service</Button>)}
           </div>
         </header>
         {key === "board" ? (
           <Board live={live} refreshKey={refresh} initial={initial} />
+        ) : key === "runs" ? (
+          <RunExplorer live={live} refreshKey={refresh} runId={param} onPick={(id) => { window.location.hash = `#/console/runs/${encodeURIComponent(id)}`; }} />
         ) : (
           <div className="panel">
             <SettingsView tab={settingsTab} onTab={(t) => nav(t === "signals" ? "settings/signals" : "settings")}

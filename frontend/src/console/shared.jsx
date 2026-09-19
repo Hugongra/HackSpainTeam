@@ -5,17 +5,24 @@ import { ApiError, api } from "../api";
 
 export const SEV = { ALLOW: 0, WARN: 1, DEFER: 2, KILL: 3 };
 
+/* Polling-friendly async state: data is kept while a refresh is in flight (loading is only true before the
+   first answer), and a new request never starts while the previous one is still running — a tick that
+   arrives mid-flight is coalesced into one follow-up request. */
 export function useAsync(fn, deps) {
   const [state, setState] = React.useState({ loading: true, data: null, error: null });
   const [tick, setTick] = React.useState(0);
-  React.useEffect(() => {
-    let live = true;
-    setState((s) => ({ ...s, loading: true }));
-    fn().then((data) => live && setState({ loading: false, data, error: null }))
-      .catch((error) => live && setState({ loading: false, data: null, error }));
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, tick]);
+  const busy = React.useRef(false); const again = React.useRef(false); const alive = React.useRef(true);
+  const fnRef = React.useRef(fn); fnRef.current = fn;
+  const run = React.useCallback(() => {
+    if (busy.current) { again.current = true; return; }
+    busy.current = true;
+    fnRef.current().then((data) => alive.current && setState({ loading: false, data, error: null }))
+      .catch((error) => alive.current && setState((s) => ({ loading: false, data: s.data, error })))
+      .finally(() => { busy.current = false; if (again.current) { again.current = false; run(); } });
+  }, []);
+  React.useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  React.useEffect(() => { run(); }, [...deps, tick]);
   return [state, () => setTick((t) => t + 1)];
 }
 

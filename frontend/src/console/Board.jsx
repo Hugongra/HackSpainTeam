@@ -11,27 +11,26 @@ import {
 import "@xyflow/react/dist/style.css";
 import { Badge, Button, Card, Icon, Input, Select, Tabs, Verdict } from "../ds";
 import { api } from "../api";
-import { DEMO_RUNS } from "../demo";
-import { ErrorNote, RunDrawer, Signals, useAsync } from "./shared";
-import { DEMO_WORKFLOWS, Escalations, StatusBadge, WorkflowDetail } from "./Platform";
+import { ErrorNote, Signals, useAsync } from "./shared";
+import { Escalations, StatusBadge, WorkflowDetail } from "./Platform";
 import { Overview, Runs, TryAction, useData } from "./Console";
 
 /* ---------------------------------------------------------------- catalog */
 export const INPUTS = {
-  happyrobot: { label: "HappyRobot", sub: "Custom LLM server · per-turn webhook", icon: "plug", source: "happyrobot" },
-  openai: { label: "OpenAI-compatible", sub: "base_url → AngryRobot proxy", icon: "terminal", source: "openai" },
-  langchain: { label: "LangChain / LangGraph", sub: "PreToolUse hook → /v1/audit", icon: "brain", source: "langchain" },
-  n8n: { label: "n8n / Make / Zapier", sub: "HTTP node → /v1/ingest", icon: "zap", source: "n8n" },
-  webhook: { label: "Custom webhook", sub: "POST /v1/ingest per turn", icon: "activity", source: "webhook" },
+  happyrobot: { label: "HappyRobot", icon: "plug", source: "happyrobot" },
+  openai: { label: "OpenAI-compatible", icon: "terminal", source: "openai" },
+  langchain: { label: "LangChain / LangGraph", icon: "brain", source: "langchain" },
+  n8n: { label: "n8n / Make / Zapier", icon: "zap", source: "n8n" },
+  webhook: { label: "Custom webhook", icon: "activity", source: "webhook" },
 };
 // Verdict → directive is fixed on the service (after_turn): ALLOW continue · WARN continue+note · DEFER escalate · KILL kill.
 // Notify is the workflow's control_url: the service POSTs every non-continue directive and control change there.
 export const OUTPUTS = {
-  continue: { label: "Continue", sub: "returned to the agent as proposed", icon: "check", verdicts: ["ALLOW"], tone: "paper" },
-  warn: { label: "Supervisor note", sub: "passes with a correction next turn", icon: "eye", verdicts: ["WARN"], tone: "paper" },
-  escalate: { label: "Escalate", sub: "held for approve · deny · take over", icon: "hand", verdicts: ["DEFER"], tone: "sand" },
-  kill: { label: "Kill", sub: "conversation closed · run locked", icon: "octagon", verdicts: ["KILL"], tone: "ink" },
-  notify: { label: "Notify", sub: "control_url webhook (HappyRobot, n8n, Slack)", icon: "siren", verdicts: ["DEFER", "KILL"], tone: "paper" },
+  continue: { label: "Continue", icon: "check", verdicts: ["ALLOW"], tone: "paper" },
+  warn: { label: "Supervisor note", icon: "eye", verdicts: ["WARN"], tone: "paper" },
+  escalate: { label: "Escalate", icon: "hand", verdicts: ["DEFER"], tone: "sand" },
+  kill: { label: "Kill", icon: "octagon", verdicts: ["KILL"], tone: "ink" },
+  notify: { label: "Notify", icon: "siren", verdicts: ["DEFER", "KILL"], tone: "paper" },
 };
 const VERDICTS = ["ALLOW", "WARN", "DEFER", "KILL"];
 const STORE = "ar_board_v3";
@@ -39,7 +38,7 @@ const GUARD_ID = "guard";
 
 /* ---------------------------------------------------------------- graph seed + persistence */
 function seedGraph(workflows) {
-  const inputs = (workflows.length ? workflows : DEMO_WORKFLOWS).slice(0, 4).map((w, i) => ({
+  const inputs = workflows.slice(0, 6).map((w, i) => ({
     id: `in-${w.id}`, type: "connector", position: { x: 40, y: 60 + i * 150 },
     data: { kind: INPUTS[w.source] ? w.source : "webhook", label: w.name, profile: w.base_profile, mode: w.mode, workflow_id: w.id, status: w.status },
   }));
@@ -79,12 +78,17 @@ function eventsFromRuns(runs) {
   }
   return out;
 }
+const detailCache = new Map();   // run_id → { key: actions count, run }
 function useTraffic(live, refreshKey) {
   return useAsync(async () => {
-    if (!live) return DEMO_RUNS;
-    const { runs } = await api.runs(6);
-    const full = await Promise.all(runs.slice(0, 6).map((r) => api.run(r.run_id).catch(() => r)));
-    return full;
+    if (!live) return [];
+    const { runs } = await api.runs(8);
+    return Promise.all(runs.slice(0, 8).map(async (r) => {
+      const hit = detailCache.get(r.run_id);
+      if (hit && hit.key === r.actions) return hit.run;
+      try { const run = await api.run(r.run_id); detailCache.set(r.run_id, { key: r.actions, run }); return run; }
+      catch { return { ...r, timeline: [] }; }
+    }));
   }, [live, refreshKey]);
 }
 
@@ -105,7 +109,7 @@ function InputNode({ data, selected }) {
     <Shell selected={selected}>
       <div className="bn-head"><Icon name={cat.icon} size={16} /><span className="ar-mono muted">INPUT · {cat.label.toUpperCase()}</span></div>
       <strong className="bn-title">{data.label || cat.label}</strong>
-      <span className="bn-sub">{data.workflow_id ? `policy ${data.profile} · ${data.mode}` : cat.sub}</span>
+      {data.workflow_id && <span className="bn-sub">policy {data.profile} · {data.mode}</span>}
       <div className="bn-foot">
         {data.workflow_id ? <StatusBadge status={data.status || "live"} /> : <Badge tone="sand">Not registered</Badge>}
         {data.count ? <span className="ar-mono muted">{data.count} turns ↑</span> : null}
@@ -120,7 +124,7 @@ function GuardNode({ data, selected }) {
       <Handle type="target" position={Position.Left} style={HANDLE} />
       <div className="bn-head"><Icon name="brain" size={16} /><span className="ar-mono" style={{ color: "var(--text-on-dark-muted)" }}>ANGRYROBOT</span></div>
       <strong className="bn-title">IRA audit</strong>
-      <span className="bn-sub" style={{ color: "var(--text-on-dark-muted)" }}>hard rules · deterministic signals · independent judge{data.judge ? ` (${data.judge})` : ""}</span>
+      {data.judge && <span className="bn-sub" style={{ color: "var(--text-on-dark-muted)" }}>judge {data.judge}{data.agent ? ` · agent ${data.agent}` : ""}{data.commit ? ` · ${data.commit}` : ""}</span>}
       <div className="bn-bands">
         {VERDICTS.map((v) => <span key={v} className={`bn-band ${v}`}>{v} <b>{data.counts?.[v] || 0}</b></span>)}
       </div>
@@ -135,7 +139,6 @@ function OutputNode({ data, selected }) {
       <Handle type="target" position={Position.Left} style={HANDLE} />
       <div className="bn-head"><Icon name={cat.icon} size={16} /><span className="ar-mono" style={{ opacity: .7 }}>LEVER</span></div>
       <strong className="bn-title">{cat.label}</strong>
-      <span className="bn-sub" style={{ opacity: .8 }}>{cat.sub}</span>
       {data.count != null && <div className="bn-foot"><span className="ar-mono" style={{ opacity: .8 }}>{data.count} ↓</span>{data.waiting ? <Badge tone="accent" dot>{data.waiting} waiting</Badge> : null}</div>}
     </Shell>
   );
@@ -164,20 +167,20 @@ const EDGE_TYPES = { traffic: TrafficEdge };
 /* ---------------------------------------------------------------- palette (drag source) */
 function Palette({ hasGuard }) {
   const drag = (payload) => (e) => { e.dataTransfer.setData("application/angryrobot-node", JSON.stringify(payload)); e.dataTransfer.effectAllowed = "move"; };
-  const Item = ({ icon, label, sub, payload, disabled }) => (
+  const Item = ({ icon, label, payload, disabled }) => (
     <div className={`pal-item ${disabled ? "is-off" : ""}`} draggable={!disabled} onDragStart={drag(payload)} title={disabled ? "Already on the board" : "Drag onto the board"}>
       <Icon name={icon} size={16} />
-      <div><div className="pal-label">{label}</div><div className="pal-sub">{sub}</div></div>
+      <div className="pal-label">{label}</div>
     </div>
   );
   return (
     <aside className="palette" aria-label="Connectors">
       <span className="ar-overline muted">Inputs</span>
-      {Object.entries(INPUTS).map(([k, c]) => <Item key={k} icon={c.icon} label={c.label} sub={c.sub} payload={{ type: "connector", kind: k }} />)}
+      {Object.entries(INPUTS).map(([k, c]) => <Item key={k} icon={c.icon} label={c.label} payload={{ type: "connector", kind: k }} />)}
       <span className="ar-overline muted" style={{ marginTop: 18 }}>Guard</span>
-      <Item icon="brain" label="AngryRobot" sub="IRA audit — one per board" payload={{ type: "guard" }} disabled={hasGuard} />
+      <Item icon="brain" label="AngryRobot" payload={{ type: "guard" }} disabled={hasGuard} />
       <span className="ar-overline muted" style={{ marginTop: 18 }}>Levers</span>
-      {Object.entries(OUTPUTS).map(([k, c]) => <Item key={k} icon={c.icon} label={c.label} sub={c.sub} payload={{ type: "lever", kind: k }} />)}
+      {Object.entries(OUTPUTS).map(([k, c]) => <Item key={k} icon={c.icon} label={c.label} payload={{ type: "lever", kind: k }} />)}
     </aside>
   );
 }
@@ -329,8 +332,8 @@ function NotifyConfig({ live, connectors, refreshKey }) {
 /* ---------------------------------------------------------------- the board */
 function BoardInner({ live, refreshKey, initial }) {
   const flow = useReactFlow();
-  const [wfs] = useAsync(() => (live ? api.workflows() : Promise.resolve({ workflows: DEMO_WORKFLOWS, base_profiles: ["default", "probe-voice", "rogue-lab", "rogue-guard"] })), [live, refreshKey]);
-  const [health] = useAsync(() => api.health().catch(() => null), []);
+  const [wfs] = useAsync(() => (live ? api.workflows() : Promise.resolve({ workflows: [], base_profiles: ["default"] })), [live, refreshKey]);
+  const [health] = useAsync(() => api.health().catch(() => null), [live]);
   const [traffic] = useTraffic(live, refreshKey);
   const data = useData(live, refreshKey);
   const [graph, setGraph] = React.useState(() => loadGraph());
@@ -346,7 +349,6 @@ function BoardInner({ live, refreshKey, initial }) {
     ro.observe(el); return () => ro.disconnect();
   }, [flow, graphReady]);
   const [sel, setSel] = React.useState(initial || null);          // {type:'node'|'edge', id, tab?}
-  const [openRun, setOpenRun] = React.useState(null);
   const [busyAll, setBusyAll] = React.useState(false); const [allErr, setAllErr] = React.useState(null);
   const controlAll = async (action) => { setBusyAll(true); setAllErr(null); try { await api.controlAll(action); } catch (x) { setAllErr(x); } finally { setBusyAll(false); } };
 
@@ -368,7 +370,7 @@ function BoardInner({ live, refreshKey, initial }) {
     }
     if (n.type === "guard") {
       const counts = {}; events.filter((e) => e.dir === "down").forEach((e) => { counts[e.verdict] = (counts[e.verdict] || 0) + 1; });
-      return { ...n, deletable: false, data: { ...n.data, counts, judge: health.data?.judge?.model?.split("/").pop() } };
+      return { ...n, deletable: false, data: { ...n.data, counts, judge: health.data?.judge?.model?.split("/").pop(), agent: health.data?.agent_default_model?.split("/").pop(), commit: health.data?.commit } };
     }
     const verdicts = (graph.edges.find((e) => e.target === n.id)?.data?.verdicts) || [];
     const count = events.filter((e) => e.dir === "down" && verdicts.includes(e.verdict)).length;
@@ -431,8 +433,7 @@ function BoardInner({ live, refreshKey, initial }) {
     const n = graph?.nodes.find((x) => x.id === sel.id);
     return n?.type === "lever" ? OUTPUTS[n.data.kind]?.label : n?.type === "connector" ? n.data.label : "";
   })();
-  const runsById = Object.fromEntries([...(data.runs.data || []), ...(traffic.data || [])].map((r) => [r.run_id, r]));
-  const openById = (id) => setOpenRun(runsById[id] || { run_id: id, profile: "", summary: {} });
+  const openById = (id) => { window.location.hash = `#/console/runs/${encodeURIComponent(id)}`; };
   const selNode = sel?.type === "node" ? nodes.find((n) => n.id === sel.id) : null;
   const selEdge = sel?.type === "edge" ? graph?.edges.find((e) => e.id === sel.id) : null;
   const issues = [];
@@ -444,7 +445,7 @@ function BoardInner({ live, refreshKey, initial }) {
     if (!graph.edges.some((e) => (e.data?.verdicts || []).includes("DEFER"))) issues.push("No Escalate lever.");
   }
 
-  if (!graph) return <p className="ar-small muted" style={{ padding: 24 }}>{wfs.error ? "Could not load the workflows; using the example board." : "Laying out the board…"}</p>;
+  if (!graph) return <p className="ar-small muted" style={{ padding: 24 }}>Laying out the board…</p>;
   return (
     <div className="board">
       <Palette hasGuard={graph.nodes.some((n) => n.type === "guard")} />
@@ -488,7 +489,6 @@ function BoardInner({ live, refreshKey, initial }) {
       {selNode?.type === "lever" && ["escalate", "kill", "notify"].includes(selNode.data.kind) && (
         <OutputDrawer key={selNode.id} node={selNode} live={live} refreshKey={refreshKey} data={data} onOpenRun={openById}
           connectors={graph.nodes.filter((n) => n.type === "connector")} onRemove={() => removeNode(selNode.id)} onClose={() => setSel(null)} />)}
-      {openRun && <RunDrawer run={openRun} live={live && !openRun.persona} onClose={() => setOpenRun(null)} />}
     </div>
   );
 }

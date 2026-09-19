@@ -4,7 +4,6 @@
 import React from "react";
 import { Badge, Button, Card, Dialog, Icon, Input, Select, Tabs, Verdict } from "../ds";
 import { api, settings } from "../api";
-import { DEMO_RUNS } from "../demo";
 import { ErrorNote, RunDrawer, Signals, useAsync } from "./shared";
 
 export const SOURCES = [
@@ -42,21 +41,7 @@ function CopyField({ label, value, secret = false }) {
   );
 }
 
-/* ---------------------------------------------------------------- demo data */
-export const DEMO_WORKFLOWS = [
-  { id: "probe-voice", name: "Carrier intake · voice", source: "happyrobot", base_profile: "probe-voice", mode: "enforce", status: "live", seeded: 1,
-    goal: "Collect company, truck city, availability and callback number, then save_carrier_info.", constraints: [], stats: { runs: 0, actions: 0, counts: {}, open_escalations: 0 } },
-  { id: "rogue-guard", name: "Rogue lab · guard", source: "openai", base_profile: "rogue-guard", mode: "enforce", status: "live", seeded: 1, goal: "", constraints: [],
-    stats: { runs: 9, actions: DEMO_RUNS.reduce((n, r) => n + r.summary.actions, 0),
-             counts: DEMO_RUNS.reduce((c, r) => { Object.entries(r.summary.counts).forEach(([k, v]) => { c[k] = (c[k] || 0) + v; }); return c; }, {}),
-             open_escalations: 0 } },
-  { id: "rogue-lab", name: "Rogue lab · observe", source: "openai", base_profile: "rogue-lab", mode: "observe", status: "live", seeded: 1, goal: "", constraints: [],
-    stats: { runs: 0, actions: 0, counts: {}, open_escalations: 0 } },
-];
-const DEMO_ESCALATIONS = DEMO_RUNS.flatMap((r) => r.timeline.filter((e) => e.action && (e.verdict === "DEFER" || e.verdict === "KILL") && e.phase !== "resample")
-  .slice(0, 1).map((e, i) => ({ id: `demo-${r.persona}-${i}`, workflow_id: "rogue-guard", run_id: r.run_id, created_at: "2026-09-19T12:56:59Z",
-    verdict: e.verdict, ira: e.ira, action: e.action, explanation: e.explanation, signals: e.signals, reasoning: e.reasoning_excerpt,
-    status: e.verdict === "DEFER" ? "open" : "killed", persona: r.persona })));
+const EMPTY_WORKFLOWS = { workflows: [], base_profiles: ["default"] };
 
 /* ---------------------------------------------------------------- flow diagram */
 function Node({ eyebrow, title, sub, tone = "paper", icon }) {
@@ -289,7 +274,7 @@ export function EscalationList({ items, live, onResolved, showWorkflow = true, e
 
 export function Escalations({ live, refreshKey, onChanged }) {
   const [tab, setTab] = React.useState("open");
-  const [data, reload] = useAsync(() => (live ? api.escalations().then((d) => d.escalations) : Promise.resolve(DEMO_ESCALATIONS)), [live, refreshKey]);
+  const [data, reload] = useAsync(() => (live ? api.escalations().then((d) => d.escalations) : Promise.resolve([])), [live, refreshKey]);
   const all = data.data || [];
   const groups = { open: all.filter((e) => e.status === "open"), resolved: all.filter((e) => ["approved", "denied", "taken_over"].includes(e.status)),
                    auto: all.filter((e) => ["killed", "observed"].includes(e.status)), all };
@@ -331,7 +316,7 @@ function Controls({ wf, live, onChange }) {
 }
 
 export function Workflows({ live, refreshKey, onOpen, onChanged }) {
-  const [data, reload] = useAsync(() => (live ? api.workflows() : Promise.resolve({ workflows: DEMO_WORKFLOWS, base_profiles: ["default", "probe-voice", "rogue-lab", "rogue-guard"] })), [live, refreshKey]);
+  const [data, reload] = useAsync(() => (live ? api.workflows() : Promise.resolve(EMPTY_WORKFLOWS)), [live, refreshKey]);
   const [connect, setConnect] = React.useState(false);
   const [created, setCreated] = React.useState(null);
   const [all, setAll] = React.useState(null);
@@ -401,8 +386,8 @@ export function Workflows({ live, refreshKey, onOpen, onChanged }) {
 }
 
 export function WorkflowDetail({ id, live, refreshKey, onChanged }) {
-  const [data, reload] = useAsync(() => (live ? api.workflow(id) : Promise.resolve(demoDetail(id))), [id, live, refreshKey]);
-  const [profiles] = useAsync(() => (live ? api.workflows().then((d) => d.base_profiles) : Promise.resolve(["default", "probe-voice", "rogue-lab", "rogue-guard"])), [live]);
+  const [data, reload] = useAsync(() => (live ? api.workflow(id) : Promise.reject(new Error("Connect the service to see this workflow."))), [id, live, refreshKey]);
+  const [profiles] = useAsync(() => (live ? api.workflows().then((d) => d.base_profiles) : Promise.resolve(["default"])), [live]);
   const [tab, setTab] = React.useState("connect");
   const [openRun, setOpenRun] = React.useState(null);
   const wf = data.data;
@@ -458,12 +443,4 @@ export function WorkflowDetail({ id, live, refreshKey, onChanged }) {
       {openRun && <RunDrawer run={openRun.timeline ? openRun : { ...openRun, profile: wf.id }} live={live && !openRun.timeline} onClose={() => setOpenRun(null)} />}
     </>
   );
-}
-
-function demoDetail(id) {
-  const wf = DEMO_WORKFLOWS.find((w) => w.id === id) || DEMO_WORKFLOWS[1];
-  const runs = wf.id === "rogue-guard" ? DEMO_RUNS.map((r) => ({ ...r, ...r.summary })) : [];
-  return { ...wf, token: "arw_example_token_shown_with_the_shared_secret", updated_at: "demo",
-           endpoints: { ingest: `${settings.api}/v1/ingest/${wf.id}`, directive: `${settings.api}/v1/ingest/${wf.id}/runs/<run_id>/directive`, custom_llm: `${settings.api}/v1/${wf.id}` },
-           runs, escalations: wf.id === "rogue-guard" ? DEMO_ESCALATIONS : [] };
 }
