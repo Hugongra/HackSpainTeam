@@ -6,19 +6,16 @@ import { ApiError, DEFAULT_API, api, settings } from "../api";
 import { DemoBanner, ErrorNote, RunDrawer, SEV, Signals, useAsync } from "./shared";
 import { Escalations, WorkflowDetail, Workflows } from "./Platform";
 import { DEMO_RUNS } from "../demo";
+import Board from "./Board";
 
 const NAV = [
-  ["workflows", "Workflows", "gauge", "Platform"],
-  ["escalations", "Escalations", "hand", "Platform"],
-  ["overview", "Alerts", "siren", "Audit"],
-  ["runs", "Runs", "activity", "Audit"],
-  ["try", "Audit an action", "flask", "Audit"],
-  ["signals", "Signals", "book-open", "Reference"],
-  ["connection", "Connection", "plug", "Reference"],
+  ["board", "Board", "gauge", "AngryRobot"],
+  ["settings", "Settings", "settings", "AngryRobot"],
 ];
-const TITLES = { workflows: ["Orchestration", "Connected workflows"], escalations: ["Human in the loop", "Escalations"],
-  overview: ["Alerts", "Held and stopped actions"], runs: ["Runs", "Agent runs"], try: ["Playground", "Audit an action"],
-  signals: ["Reference", "Signal catalog"], connection: ["Settings", "Connection"] };
+const TITLES = { board: ["Connectors → guard → levers", "Board"], settings: ["Settings", "Connection & reference"] };
+// Old deep links keep working: they open the Board with the matching drawer, or a Settings tab.
+const LEGACY = { workflows: { type: null }, escalations: { type: "node", id: "out-escalate" }, overview: { type: "node", id: "guard", tab: "alerts" },
+  runs: { type: "node", id: "guard", tab: "runs" }, try: { type: "node", id: "guard", tab: "try" } };
 
 /* ---------------------------------------------------------------- data */
 function demoAlerts() {
@@ -27,14 +24,14 @@ function demoAlerts() {
   }))).sort((a, b) => SEV[b.verdict] - SEV[a.verdict] || b.ira_score - a.ira_score);
 }
 
-function useData(live, refreshKey) {
+export function useData(live, refreshKey) {
   const [runs] = useAsync(() => (live ? api.runs(50).then((d) => d.runs) : Promise.resolve(DEMO_RUNS.map(({ timeline, ...r }) => r))), [live, refreshKey]);
   const [alerts] = useAsync(() => (live ? api.alerts(100).then((d) => d.alerts) : Promise.resolve(demoAlerts())), [live, refreshKey]);
   return { runs, alerts };
 }
 
 /* ---------------------------------------------------------------- views */
-function Overview({ data, live, onOpenRun }) {
+export function Overview({ data, live, onOpenRun }) {
   const { runs, alerts } = data;
   const list = alerts.data || [];
   const human = list.filter((a) => a.verdict === "DEFER" || a.verdict === "KILL");
@@ -87,7 +84,7 @@ function Overview({ data, live, onOpenRun }) {
   );
 }
 
-function Runs({ data, onOpenRun }) {
+export function Runs({ data, onOpenRun }) {
   const { runs } = data;
   const [q, setQ] = React.useState("");
   const rows = (runs.data || []).filter((r) => !q || `${r.run_id} ${r.profile} ${r.persona || ""}`.toLowerCase().includes(q.toLowerCase()));
@@ -131,7 +128,7 @@ const PRESETS = {
   honest: { label: "Honest answer", user: "Are you a real person or an AI?", tool: "say", args: "{}", text: "I'm an AI assistant for AngryRobots Logistics.", reasoning: "" },
 };
 
-function TryAction({ live, onConnect }) {
+export function TryAction({ live, onConnect }) {
   const [form, setForm] = React.useState({ profile: "rogue-guard", ...PRESETS.closer });
   const [res, setRes] = React.useState(null);
   const [err, setErr] = React.useState(null);
@@ -203,7 +200,7 @@ function TryAction({ live, onConnect }) {
   );
 }
 
-function SignalCatalog() {
+export function SignalCatalog() {
   const [cat, reload] = useAsync(() => api.signals(), []);
   const [type, setType] = React.useState("all");
   const TYPES = { floor: "Hard rules", suspicion: "Deterministic", judge: "Judge", input: "Inputs" };
@@ -234,7 +231,7 @@ function SignalCatalog() {
   );
 }
 
-function Connection({ onSaved }) {
+export function Connection({ onSaved }) {
   const [apiUrl, setApiUrl] = React.useState(settings.api);
   const [secret, setSecret] = React.useState(settings.secret);
   const [status, setStatus] = React.useState(null);
@@ -281,48 +278,40 @@ function Connection({ onSaved }) {
 }
 
 /* ---------------------------------------------------------------- shell */
-export default function Console({ view = "workflows", param = "" }) {
+export default function Console({ view = "board", param = "" }) {
   const [refresh, setRefresh] = React.useState(0);
   const live = Boolean(settings.secret);
-  const data = useData(live, refresh);
-  const [openRun, setOpenRun] = React.useState(null);
   const [toast, setToast] = React.useState(null);
   const nav = (v) => { window.location.hash = `#/console/${v}`; };
-  const humanCount = (data.alerts.data || []).filter((a) => a.verdict === "DEFER" || a.verdict === "KILL").length;
-  const runsById = Object.fromEntries((live ? data.runs.data || [] : DEMO_RUNS).map((r) => [r.run_id, r]));
-  const open = (id) => setOpenRun(runsById[id] || { run_id: id, profile: "", summary: {} });
-  const [eyebrow, title] = view === "workflows" && param ? ["Orchestration", "Workflow"] : (TITLES[view] || TITLES.workflows);
-
-  React.useEffect(() => { setOpenRun(null); }, [view, param]);
+  const isSettings = view === "settings" || view === "connection" || view === "signals";
+  const key = isSettings ? "settings" : "board";
+  const [eyebrow, title] = TITLES[key];
+  const initial = LEGACY[view]?.type ? LEGACY[view] : (view === "workflows" && param ? { type: "node", id: `in-${param}` } : null);
+  const settingsTab = view === "signals" || param === "signals" ? "signals" : "connection";
 
   React.useEffect(() => {
-    if (!live || !["overview", "runs", "workflows", "escalations"].includes(view)) return undefined;
+    if (!live || key !== "board") return undefined;
     const t = setInterval(() => setRefresh((n) => n + 1), 8000);
     return () => clearInterval(t);
-  }, [live, view]);
+  }, [live, key]);
 
-  const links = NAV.map(([k, label, icon, group], i) => (
-    <React.Fragment key={k}>
-      {group !== NAV[i - 1]?.[3] && <span className="side-group ar-overline">{group}</span>}
-      <button className={`side-link ${view === k ? "is-on" : ""}`} onClick={() => nav(k)} aria-current={view === k ? "page" : undefined}>
-        <Icon name={icon} size={18} />{label}
-        {k === "overview" && humanCount > 0 && <span className="ar-mono" style={{ marginLeft: "auto", color: "var(--ar-sand)" }}>{humanCount}</span>}
-      </button>
-    </React.Fragment>
+  const links = NAV.map(([k, label, icon]) => (
+    <button key={k} className={`side-link ${key === k ? "is-on" : ""}`} onClick={() => nav(k)} aria-current={key === k ? "page" : undefined}>
+      <Icon name={icon} size={18} />{label}
+    </button>
   ));
 
   return (
-    <div className="console">
+    <div className={`console ${key === "board" ? "is-board" : ""}`}>
       <aside className="sidebar">
         <a href="#/" style={{ padding: "0 20px 26px", display: "inline-flex" }} aria-label="AngryRobot home"><Logo variant="lockup" tone="paper" height={20} /></a>
         <nav aria-label="Console">{links}</nav>
         <div style={{ marginTop: "auto", padding: "0 20px" }}>
           <div style={{ boxShadow: "var(--shadow-hairline-dark)", padding: 14 }}>
             <span className="ar-mono" style={{ color: "var(--text-on-dark-muted)" }}>{live ? "LIVE SERVICE" : "EXAMPLE DATA"}</span>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 8 }}>
-              <span style={{ fontFamily: "var(--font-display)", fontSize: 32, lineHeight: 1, color: "var(--ar-sand)" }}>{humanCount}</span>
-              <span style={{ fontSize: 13, color: "var(--text-on-dark-muted)" }}>need a human</span>
-            </div>
+            <p className="ar-caption" style={{ color: "var(--text-on-dark-muted)", marginTop: 8 }}>
+              {live ? settings.api.replace(/^https?:\/\//, "") : "Add the shared secret in Settings to drive real workflows."}
+            </p>
           </div>
         </div>
       </aside>
@@ -334,32 +323,32 @@ export default function Console({ view = "workflows", param = "" }) {
             <h2>{title}</h2>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
-            {view === "workflows" && param && (
-              <Button variant="secondary" size="sm" onClick={() => nav("workflows")}>All workflows</Button>
-            )}
-            {["overview", "runs", "workflows", "escalations"].includes(view) && (
-              <Button variant="secondary" size="sm" onClick={() => setRefresh((n) => n + 1)} iconLeft={<Icon name="refresh" size={16} />}>Refresh</Button>
-            )}
+            {key === "board" && <Button variant="secondary" size="sm" onClick={() => setRefresh((n) => n + 1)} iconLeft={<Icon name="refresh" size={16} />}>Refresh</Button>}
           </div>
         </header>
-        <div className="panel">
-          {!live && view !== "connection" && view !== "signals" && <DemoBanner onConnect={() => nav("connection")} />}
-          {view === "workflows" && !param && <Workflows live={live} refreshKey={refresh} onOpen={(id) => { window.location.hash = `#/console/workflows/${encodeURIComponent(id)}`; }} onChanged={() => setRefresh((n) => n + 1)} />}
-          {view === "workflows" && param && <WorkflowDetail id={param} live={live} refreshKey={refresh} onChanged={() => setRefresh((n) => n + 1)} />}
-          {view === "escalations" && <Escalations live={live} refreshKey={refresh} onChanged={() => setRefresh((n) => n + 1)} />}
-          {view === "overview" && <Overview data={data} live={live} onOpenRun={open} />}
-          {view === "runs" && <Runs data={data} onOpenRun={open} />}
-          {view === "try" && <TryAction live={live} onConnect={() => nav("connection")} />}
-          {view === "signals" && <SignalCatalog />}
-          {view === "connection" && <Connection onSaved={() => { setRefresh((n) => n + 1); setToast(settings.secret ? "Secret saved for this tab." : "Secret removed. Showing example data."); }} />}
-        </div>
+        {key === "board" ? (
+          <Board live={live} refreshKey={refresh} initial={initial} />
+        ) : (
+          <div className="panel">
+            <SettingsView tab={settingsTab} onTab={(t) => nav(t === "signals" ? "settings/signals" : "settings")}
+              onSaved={() => { setRefresh((n) => n + 1); setToast(settings.secret ? "Secret saved for this tab." : "Secret removed. Showing example data."); }} />
+          </div>
+        )}
       </main>
-      {openRun && <RunDrawer run={openRun} live={live && !openRun.persona} onClose={() => setOpenRun(null)} />}
       {toast && (
         <div style={{ position: "fixed", right: 24, bottom: 24, zIndex: 200 }}>
           <Toast tone="positive" title={toast} onDismiss={() => setToast(null)} />
         </div>
       )}
     </div>
+  );
+}
+
+function SettingsView({ tab, onTab, onSaved }) {
+  return (
+    <>
+      <Tabs value={tab} onChange={onTab} items={[{ value: "connection", label: "Connection" }, { value: "signals", label: "Signal reference" }]} />
+      {tab === "connection" ? <Connection onSaved={onSaved} /> : <SignalCatalog />}
+    </>
   );
 }

@@ -77,7 +77,7 @@ const SIZES = {
   lg: { height: 54, padding: "0 32px", fontSize: 18, gap: 10 },
 };
 
-/** Square by design — radius means "floating" in this system, and a button sits flat. */
+/** Rounded controls (--radius-sm); surfaces use --radius-lg. */
 export function Button({ variant = "primary", size = "md", fullWidth = false, iconLeft, iconRight, children, className = "", style, ...rest }) {
   const s = SIZES[size] || SIZES.md;
   return (
@@ -133,12 +133,12 @@ const BADGES = {
   onDark: { background: "rgba(244,241,234,0.14)", color: "var(--ar-paper)" },
 };
 
-/** Status marker. Mono, uppercase, square — reads as a stamp, not a pill. */
+/** Status marker. Mono, uppercase, softly rounded. */
 export function Badge({ tone = "neutral", dot = false, children, style }) {
   return (
-    <span className="ar-mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 22, padding: "0 8px",
+    <span className="ar-mono" style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 22, padding: "0 9px", borderRadius: "var(--radius-pill)",
                                         whiteSpace: "nowrap", ...(BADGES[tone] || BADGES.neutral), ...style }}>
-      {dot && <span style={{ width: 6, height: 6, background: "currentColor", flex: "none" }} />}
+      {dot && <span style={{ width: 6, height: 6, borderRadius: 3, background: "currentColor", flex: "none" }} />}
       {children}
     </span>
   );

@@ -46,7 +46,7 @@ function Nav() {
           <a href="#plug">Plug it in</a>
         </nav>
         <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
-          <Button className="nav-secondary" variant={onDark ? "onDark" : "secondary"} size="sm" onClick={go("#/console/signals")}>Signals</Button>
+          <Button className="nav-secondary" variant={onDark ? "onDark" : "secondary"} size="sm" onClick={go("#/console/settings/signals")}>Signals</Button>
           <Button size="sm" variant={onDark ? "inverse" : "ink"} onClick={go("#/console")}>Open console</Button>
         </div>
       </div>

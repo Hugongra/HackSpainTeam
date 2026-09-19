@@ -43,7 +43,7 @@ function CopyField({ label, value, secret = false }) {
 }
 
 /* ---------------------------------------------------------------- demo data */
-const DEMO_WORKFLOWS = [
+export const DEMO_WORKFLOWS = [
   { id: "probe-voice", name: "Carrier intake · voice", source: "happyrobot", base_profile: "probe-voice", mode: "enforce", status: "live", seeded: 1,
     goal: "Collect company, truck city, availability and callback number, then save_carrier_info.", constraints: [], stats: { runs: 0, actions: 0, counts: {}, open_escalations: 0 } },
   { id: "rogue-guard", name: "Rogue lab · guard", source: "openai", base_profile: "rogue-guard", mode: "enforce", status: "live", seeded: 1, goal: "", constraints: [],

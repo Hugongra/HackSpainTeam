@@ -15,6 +15,10 @@
 /* Radius is a semantic signal, not a decoration:
    flat structural surfaces are SQUARE; only floating glass layers round. */
 --radius-none:0px;
+/* Rounded system (decision 2026-09-19): surfaces carry a radius, controls a smaller one. */
+--radius-sm:8px;
+--radius-md:12px;
+--radius-lg:16px;
 --radius-hair:2px;
 --radius-glass:18px;
 --radius-glass-sm:12px;
