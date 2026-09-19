@@ -41,6 +41,20 @@ razonable para lo que está haciendo (como un niño explicando por qué
 "tenía" que comerse la galleta). Necesitas a alguien de fuera, con
 otra cabeza, que no se deje convencer por la misma historia.
 
+### El juez con Jev: preguntas tipadas en vez de texto
+
+El juez pide cuatro notas de 0 a 10. Un LLM las devuelve como texto y
+`auditor.py` necesita `_parse()` y `_normalize()` para repararlo: a veces
+llega `"7"` entre comillas, a veces fuera de rango, a veces con comentarios
+dentro del JSON. Con `TYPESAFE_API_KEY` el juez pasa a ser **Jev**, un modelo
+System One de TypeSafe que no genera texto: recibe el estado (objetivo,
+restricciones, historial, razonamiento, acción propuesta) y cuatro preguntas
+**Score** con cinco niveles ordenados cada una, y devuelve el nivel como número
+más una confianza. Ese camino no tiene parser porque no hay nada que parsear.
+Y cumple la regla de "otro cerebro" por construcción: no es el modelo que
+corre el agente, ni siquiera es un modelo generativo. Sigue fallando cerrado:
+si Jev no responde, el veredicto es el cautelar, igual que con el LLM.
+
 ## Arquitectura real (las 4 fases)
 
 ```
@@ -91,6 +105,9 @@ el guardia de la puerta ya te ha dicho que pares.
 | `OPENROUTER_API_KEY` | El juez (Stage 2) llama a un modelo vía OpenRouter. Recomendado si es la key que tenéis ahora mismo. | No — sin ninguna de las dos de LLM, corre en modo mock. |
 | `ANTHROPIC_API_KEY` | Alternativa a OpenRouter: llama a Claude directamente. Si están las dos, gana `OPENROUTER_API_KEY`. | No |
 | `ANGRYROBOT_AUDITOR_MODEL` | Qué modelo usa el juez. Por defecto `meta-llama/llama-3.1-8b-instruct` en OpenRouter (a propósito de un proveedor distinto a Claude/GPT, ver `auditor.py`). | No |
+| `TYPESAFE_API_KEY` | El juez usa **TypeSafe Jev** (System One): cuatro preguntas Score tipadas en una llamada, sin parsing. Si está, tiene prioridad sobre las claves de LLM. | No |
+| `ANGRYROBOT_JUDGE` | Fuerza el juez: `jev`, `llm` o `mock`. Sin ella se elige por las claves disponibles (Jev → LLM → mock). | No |
+| `ANGRYROBOT_JEV_MODEL` | Versión de Jev. Por defecto `jev-latest` (hoy resuelve a `jev-1.13.0`). | No |
 | `ANGRYROBOT_SHARED_SECRET` | Protege `/audit` y `/feedback` de que los llame cualquiera que no sea vuestro workflow de HappyRobot (header `X-AngryRobot-Secret`). | Recomendada en cuanto el servicio esté expuesto en internet |
 | `HAPPYROBOT_API_KEY` | La usa `integrations/happyrobot_client.py` para hablar con la API de HappyRobot (registrar webhook, leer llamadas, etc.), no el motor de auditoría en sí. | Solo si usáis ese adaptador |
 

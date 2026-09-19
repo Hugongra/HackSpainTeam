@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+"""
+ar_pipeline_ui — one page to run the training-data workflows and watch them.
+
+  /usr/bin/python3 ar_pipeline_ui.py            # → http://localhost:8793
+
+Buttons map 1:1 to the scripts in this repo; nothing runs that you could not run
+from a shell. Each run streams its stdout to the page. Two chains:
+
+  offline  augment → lint → dataset → train                (no keys, no cost)
+  full     augment → synth → lint → dataset → train        (needs ANTHROPIC_API_KEY)
+
+Live-lab steps (hr_rogue_lab.py) need HR_API_KEY and spend HappyRobot credits;
+the page says so next to the button. `.env` in the repo root is loaded into the
+environment of every subprocess.
+"""
+import argparse, json, os, subprocess, sys, threading, time, webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+PY = sys.executable
+
+STEPS = [
+    {"id": "fixtures", "group": "offline", "title": "Regenerar fixtures", "cmd": ["ar_fixtures.py"],
+     "desc": "14 fixtures escritos a mano → fixtures/ (determinista)"},
+    {"id": "augment", "group": "offline", "title": "Aumentar (mutaciones + flips)", "cmd": ["ar_augment.py", "--per", "{per}"],
+     "desc": "10 mutaciones de superficie y 9 flips de predicado → data/augmented.jsonl"},
+    {"id": "lint", "group": "offline", "title": "Lint de seguridad", "cmd": ["ar_lint.py"],
+     "desc": "hosts .invalid, tokens FAKE, payloads elididos; falla si algo es operativo"},
+    {"id": "dataset", "group": "offline", "title": "Construir dataset", "cmd": ["ar_dataset.py"],
+     "desc": "todas las fuentes → un registro por evento con features + etiqueta + split"},
+    {"id": "train", "group": "offline", "title": "Entrenar modelo", "cmd": ["ar_train.py"],
+     "desc": "regresión logística sobre el espacio de señales → data/model.json"},
+    {"id": "score", "group": "offline", "title": "Puntuar guard (fixtures)", "cmd": ["ar_score.py", "fixtures/corpus.jsonl"],
+     "desc": "precisión/recall de las reglas sobre los 14 fixtures"},
+    {"id": "cluster", "group": "offline", "title": "Clustering no supervisado", "cmd": ["ar_cluster.py"],
+     "desc": "el experimento de knowledge/16 sobre los fixtures"},
+    {"id": "synth", "group": "llm", "title": "Generar fixtures con Claude", "cmd": ["ar_synth.py", "--per-family", "{per_family}"],
+     "desc": "nuevos fixtures por familia + gemelo benigno, linted → data/synth.jsonl", "needs": "anthropic"},
+    {"id": "personas", "group": "llm", "title": "Generar personas (OpenRouter)", "cmd": ["ar_persona_gen.py", "--n", "{n_personas}"],
+     "desc": "presión de negocio + guion de ataque + violaciones esperadas → data/personas.json", "needs": "OPENROUTER_API_KEY"},
+    {"id": "personas-add", "group": "llm", "title": "Generar personas y añadir", "cmd": ["ar_persona_gen.py", "--n", "{n_personas}", "--append"],
+     "desc": "igual, conservando las ya generadas", "needs": "OPENROUTER_API_KEY"},
+    {"id": "jev-judge", "group": "jev", "title": "Jev: juzgar fixtures", "cmd": ["ar_jev.py", "fixtures/corpus.jsonl"],
+     "desc": "una llamada por evento, todas las preguntas en paralelo; respuestas cacheadas en data/jev-cache.jsonl", "needs": "TYPESAFE_API_KEY"},
+    {"id": "compare", "group": "jev", "title": "Comparar regex · Jev · ambos", "cmd": ["ar_compare.py"],
+     "desc": "el mismo guard con tres jueces sobre fixtures + aumentados + sintéticos → data/compare.json", "needs": "TYPESAFE_API_KEY"},
+    {"id": "dataset-jev", "group": "jev", "title": "Dataset con features de Jev", "cmd": ["ar_dataset.py"], "env": {"AR_JUDGE": "both"},
+     "desc": "AR_JUDGE=both: cada respuesta de Jev es una columna más del evento", "needs": "TYPESAFE_API_KEY"},
+    {"id": "train-jev", "group": "jev", "title": "Entrenar con features de Jev", "cmd": ["ar_train.py"],
+     "desc": "misma regresión logística; compara los pesos con los de la ejecución sin Jev"},
+    {"id": "lab-create", "group": "live", "title": "Lab: crear workflows", "cmd": ["hr_rogue_lab.py", "create", "--personas-file", "data/personas.json"],
+     "desc": "publica cada persona como workflow en HappyRobot (+ northstars + tools)", "needs": "HR_API_KEY"},
+    {"id": "lab-attack", "group": "live", "title": "Lab: atacar", "cmd": ["hr_rogue_lab.py", "attack", "--personas-file", "data/personas.json"],
+     "desc": "conversaciones guionizadas · ~3.4 créditos cada una", "needs": "HR_API_KEY"},
+    {"id": "lab-report", "group": "live", "title": "Lab: informe", "cmd": ["hr_rogue_lab.py", "report", "--personas-file", "data/personas.json"],
+     "desc": "qué vio el auditor de la plataforma", "needs": "HR_API_KEY"},
+    {"id": "lab-corpus", "group": "live", "title": "Lab: corpus", "cmd": ["hr_rogue_lab.py", "corpus", "--personas-file", "data/personas.json"],
+     "desc": "runs reales etiquetados → explore/rogue-lab/corpus.jsonl (entra en el dataset)", "needs": "HR_API_KEY"},
+]
+CHAINS = {"offline": ["augment", "lint", "dataset", "train"],
+          "full": ["augment", "synth", "lint", "dataset", "train"],
+          "live": ["personas", "lab-create", "lab-attack", "lab-report", "lab-corpus", "dataset", "train"],
+          "jev": ["compare", "dataset-jev", "train-jev"]}
+FILES = ["fixtures/corpus.jsonl", "data/augmented.jsonl", "data/synth.jsonl", "data/personas.json",
+         "explore/rogue-lab/corpus.jsonl", "data/dataset.jsonl", "data/jev-cache.jsonl", "data/compare.json"]
+
+jobs, lock = {}, threading.Lock()
+
+
+def env_with_dotenv():
+    env = dict(os.environ)
+    p = os.path.join(ROOT, ".env")
+    if os.path.exists(p):
+        for line in open(p):
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1); env.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    return env
+
+
+def capabilities():
+    env = env_with_dotenv()
+    try:
+        import anthropic  # noqa
+        sdk = True
+    except ImportError:
+        sdk = False
+    return {"HR_API_KEY": bool(env.get("HR_API_KEY")),
+            "OPENROUTER_API_KEY": bool(env.get("OPENROUTER_API_KEY")),
+            "TYPESAFE_API_KEY": bool(env.get("TYPESAFE_API_KEY")),
+            "anthropic": sdk and bool(env.get("ANTHROPIC_API_KEY") or env.get("ANTHROPIC_AUTH_TOKEN") or os.path.exists(os.path.expanduser("~/.config/anthropic"))),
+            "anthropic_sdk": sdk}
+
+
+def run_step(step, params, job):
+    cmd = [PY] + [c.format(**params) for c in step["cmd"]]
+    job["cmd"] = " ".join(os.path.basename(c) if i == 0 else c for i, c in enumerate(cmd))
+    job["status"] = "running"; job["started"] = time.time()
+    try:
+        env = env_with_dotenv(); env.update(step.get("env", {}))
+        p = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env, bufsize=1)
+        for line in p.stdout: job["log"].append(line.rstrip("\n"))
+        rc = p.wait()
+    except Exception as e:                        # noqa
+        job["log"].append(f"!! {e}"); rc = -1
+    job["rc"] = rc; job["status"] = "ok" if rc == 0 else "failed"; job["ended"] = time.time()
+    return rc
+
+
+def start(step_ids, params):
+    jid = f"{int(time.time() * 1000)}"
+    steps = [s for sid in step_ids for s in STEPS if s["id"] == sid]
+    job = {"id": jid, "steps": [s["id"] for s in steps], "status": "queued", "log": [], "rc": None, "started": None, "ended": None, "cmd": ""}
+    with lock: jobs[jid] = job
+
+    def go():
+        for i, s in enumerate(steps):
+            if len(steps) > 1: job["log"].append(f"━━ [{i + 1}/{len(steps)}] {s['title']} ━━")
+            if run_step(s, params, job) != 0:
+                job["log"].append("✗ cadena detenida"); return
+        if len(steps) > 1: job["log"].append("✓ cadena completa")
+    threading.Thread(target=go, daemon=True).start()
+    return jid
+
+
+def file_stat(rel):
+    p = os.path.join(ROOT, rel)
+    if not os.path.exists(p): return {"path": rel, "exists": False}
+    if rel.endswith(".json"):
+        try: n = len(json.load(open(p)))
+        except Exception: n = 0    # noqa
+    else:
+        n = sum(1 for l in open(p) if l.strip())
+    return {"path": rel, "exists": True, "lines": n, "mtime": time.strftime("%H:%M:%S", time.localtime(os.path.getmtime(p)))}
+
+
+def read_json(rel):
+    p = os.path.join(ROOT, rel)
+    try: return json.load(open(p))
+    except Exception: return None    # noqa
+
+
+def state():
+    with lock: js = sorted(jobs.values(), key=lambda j: j["id"], reverse=True)[:30]
+    model = read_json("data/model.json")
+    return {"steps": STEPS, "chains": CHAINS, "caps": capabilities(), "files": [file_stat(f) for f in FILES],
+            "summary": read_json("data/dataset.summary.json"), "model": model["report"] if model else None,
+            "compare": read_json("data/compare.json"),
+            "jobs": [{**j, "log": j["log"][-400:]} for j in js]}
+
+
+HTML = r"""<!doctype html><html><head><meta charset="utf-8"><title>AngryRobots · training data</title>
+<style>
+:root{--bg:#0e1014;--card:#161a21;--line:#252b36;--fg:#e7e9ef;--mut:#8a93a6;--ok:#2f855a;--bad:#c53030;--run:#b7791f;--acc:#2b6cb0}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:10px 18px;border-bottom:1px solid var(--line);display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+header h1{font-size:15px;margin:0}.cap{font-size:12px;color:var(--mut)}.cap b{margin-left:4px}.on{color:#7bd389}.off{color:#e07a7a}
+main{display:grid;grid-template-columns:400px 1fr;height:calc(100vh - 48px)}
+#left{border-right:1px solid var(--line);overflow:auto;padding:12px}
+#right{overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:12px}
+section{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:12px}
+h2{margin:0 0 8px;font-size:11.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+.step{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
+.step:first-of-type{border-top:0}.step .t{flex:1;min-width:0}.step .t b{display:block;font-size:13px}.step .t span{font-size:11px;color:var(--mut)}
+button{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;white-space:nowrap}
+button:disabled{background:#2a3140;color:#6b7386;cursor:not-allowed}button.chain{background:#2f855a;padding:7px 12px;font-size:13px}
+input[type=number]{width:56px;background:#0b0d11;color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:3px 6px;font-size:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0}
+table{border-collapse:collapse;font-size:12px;width:100%}td,th{border-bottom:1px solid var(--line);padding:3px 6px;text-align:left}th{color:var(--mut);font-weight:500}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.job{display:flex;gap:8px;align-items:center;padding:4px 6px;border-radius:5px;cursor:pointer;font-size:12px}.job:hover,.job.sel{background:#0b0d11}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}.ok{background:var(--ok)}.failed{background:var(--bad)}.running{background:var(--run);animation:p 1s infinite}.queued{background:#555}
+@keyframes p{50%{opacity:.3}}
+pre{white-space:pre-wrap;background:#0b0d11;padding:9px 11px;border-radius:6px;font-size:11.5px;margin:0;max-height:52vh;overflow:auto;flex:1}
+.needs{font-size:10px;padding:1px 6px;border-radius:9px;border:1px solid var(--line);color:var(--mut)}
+</style></head><body>
+<header><h1>AngryRobots · pipeline de training data</h1><span id="caps"></span></header>
+<main>
+<div id="left">
+ <section><h2>Cadenas</h2>
+  <div class="row">augment <code>--per</code> <input type="number" id="per" value="8" min="1" max="100">
+   synth <code>--per-family</code> <input type="number" id="pf" value="2" min="1" max="10">
+   personas <code>--n</code> <input type="number" id="np" value="4" min="1" max="10"></div>
+  <div class="row"><button class="chain" onclick="runChain('offline')">▶ Offline: augment → lint → dataset → train</button></div>
+  <div class="row"><button class="chain" id="fullbtn" onclick="runChain('full')">▶ Completo: + fixtures con Claude</button></div>
+  <div class="row"><button class="chain" id="jevbtn" style="background:#6b46c1" onclick="runChain('jev')">▶ Jev: comparar jueces → dataset con Jev → train</button></div>
+  <div class="row"><button class="chain" id="livebtn" style="background:#b7791f" onclick="runLive()">▶ En vivo: personas → workflows → atacar → corpus → train</button></div>
+  <div class="row" style="font-size:11px;color:var(--mut)">la cadena en vivo publica workflows reales en HappyRobot y gasta créditos (~3.4 por conversación)</div>
+ </section>
+ <section><h2>Offline (sin claves, sin coste)</h2><div id="g-offline"></div></section>
+ <section><h2>Jev (TypeSafe) · juez semántico tipado</h2><div id="g-jev"></div></section>
+ <section><h2>Generación con LLM</h2><div id="g-llm"></div></section>
+ <section><h2>Lab en vivo (HappyRobot, gasta créditos)</h2><div id="g-live"></div></section>
+</div>
+<div id="right">
+ <section><h2>Datos</h2><table id="files"></table></section>
+ <section><h2>Regex frente a Jev · mismo guard, tres jueces</h2><div id="compare"></div></section>
+ <section><h2>Dataset y modelo</h2><div id="model"></div></section>
+ <section style="flex:1;display:flex;flex-direction:column;min-height:240px"><h2>Ejecuciones</h2>
+  <div id="jobs" style="max-height:120px;overflow:auto;margin-bottom:8px"></div><pre id="log">(selecciona una ejecución)</pre></section>
+</div>
+</main>
+<script>
+let S={steps:[],jobs:[]},sel=null,follow=true;
+const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const params=()=>`per=${document.getElementById('per').value}&per_family=${document.getElementById('pf').value}&n_personas=${document.getElementById('np').value}`;
+async function run(id){const r=await fetch(`/api/run?steps=${id}&`+params(),{method:'POST'});sel=(await r.json()).job;follow=true;tick();}
+async function runChain(c){const r=await fetch(`/api/run?chain=${c}&`+params(),{method:'POST'});sel=(await r.json()).job;follow=true;tick();}
+function runLive(){if(confirm('Publica workflows reales en HappyRobot y gasta créditos. ¿Seguir?'))runChain('live');}
+function running(){return S.jobs.some(j=>j.status==='running'||j.status==='queued');}
+function stepRow(s){const ok=!s.needs||S.caps[s.needs];const why=s.needs&&!ok?(s.needs==='anthropic'?(S.caps.anthropic_sdk?'falta ANTHROPIC_API_KEY':'pip install anthropic'):'falta '+s.needs):'';
+ return `<div class="step"><div class="t"><b>${esc(s.title)} ${s.needs?`<span class="needs">${esc(s.needs)}</span>`:''}</b><span>${esc(s.desc)}${why?' · <span class="off">'+esc(why)+'</span>':''}</span></div><button ${(!ok||running())?'disabled':''} onclick="run('${s.id}')">▶</button></div>`;}
+function render(){
+ document.getElementById('caps').innerHTML=['HR_API_KEY','OPENROUTER_API_KEY','TYPESAFE_API_KEY','anthropic'].map(k=>`<span class="cap">${k}<b class="${S.caps[k]?'on':'off'}">${S.caps[k]?'●':'○'}</b></span>`).join(' ');
+ for(const g of ['offline','jev','llm','live'])document.getElementById('g-'+g).innerHTML=S.steps.filter(s=>s.group===g).map(stepRow).join('');
+ document.querySelectorAll('button.chain').forEach(b=>b.disabled=running());document.getElementById('fullbtn').disabled=running()||!S.caps.anthropic;
+ document.getElementById('livebtn').disabled=running()||!S.caps.HR_API_KEY||!S.caps.OPENROUTER_API_KEY;
+ document.getElementById('jevbtn').disabled=running()||!S.caps.TYPESAFE_API_KEY;
+ let c='';
+ if(S.compare){for(const [path,cd] of Object.entries(S.compare.corpora)){c+=`<div style="font-size:12px;margin:6px 0 2px"><b>${esc(path)}</b></div><table><tr><th>juez</th><th>casos</th><th>recall</th><th>precisión</th><th>FN</th><th>FP</th><th>ms/llamada</th></tr>`;
+   for(const [m,s] of Object.entries(cd.summary)){c+=s.error?`<tr><td>${m}</td><td colspan=6 class="off">${esc(s.error)}</td></tr>`:`<tr><td>${m}</td><td class="num">${s.cases}</td><td class="num">${s.recall??'—'}</td><td class="num">${s.precision??'—'}</td><td class="num">${s.missed}</td><td class="num">${s.false_positives}</td><td class="num">${s.judge_ms_per_call??'—'}</td></tr>`;}
+   c+='</table>';
+   if(cd.disagreements&&cd.disagreements.length)c+=`<div style="font-size:11px;color:var(--mut);margin-top:4px">desacuerdos (${cd.disagreements.length}): ${cd.disagreements.slice(0,8).map(d=>esc(d.case_id)+' ['+S.compare.modes.filter(m=>d[m]).map(m=>m+'='+esc(d[m])).join(' · ')+']').join(' ; ')}${cd.disagreements.length>8?' …':''}</div>`;
+   else c+='<div style="font-size:11px;color:var(--mut);margin-top:4px">sin desacuerdos</div>';}}
+ else c='<span class="cap">ejecuta "Comparar" para ver regex frente a Jev</span>';
+ document.getElementById('compare').innerHTML=c;
+ document.getElementById('files').innerHTML='<tr><th>fichero</th><th>registros</th><th>modificado</th></tr>'+S.files.map(f=>`<tr><td>${esc(f.path)}</td><td class="num">${f.exists?f.lines:'<span class="off">—</span>'}</td><td>${f.exists?f.mtime:''}</td></tr>`).join('');
+ let m='';
+ if(S.summary){m+=`<div class="row"><span>${S.summary.cases} casos · ${S.summary.events} eventos · ${S.summary.n_features} features · fuentes: ${Object.entries(S.summary.per_source).map(([k,v])=>k+'='+v).join(', ')}</span></div>`;}
+ if(S.model){m+='<table><tr><th>split</th><th>eventos</th><th>positivos</th><th>modelo P / R / AUC</th><th>reglas P / R</th></tr>';
+  for(const [k,v] of Object.entries(S.model.splits)){const f=x=>x==null?'—':x;m+=`<tr><td>${k}</td><td class="num">${v.events}</td><td class="num">${v.positive}</td><td>${f(v.model.precision)} / ${f(v.model.recall)} / ${f(v.model.auc)}</td><td>${f(v.guard_rules.precision)} / ${f(v.guard_rules.recall)}</td></tr>`;}
+  m+='</table><div class="row" style="margin-top:6px;font-size:12px;color:var(--mut)">pesos: '+S.model.top_weights.slice(0,8).map(w=>`${esc(w.feature)} <b style="color:${w.w>0?'#e5b95c':'#7fb3ff'}">${w.w>0?'+':''}${w.w}</b>`).join(' · ')+'</div>';
+  if(S.model.heldout_fixed_by_model.length)m+=`<div class="row" style="font-size:12px">held-out corregidos por el modelo frente a las reglas: ${S.model.heldout_fixed_by_model.map(d=>esc(d.id)).join(', ')}</div>`;}
+ else if(!S.summary)m='<span class="cap">ejecuta la cadena offline para construir el dataset y entrenar</span>';
+ document.getElementById('model').innerHTML=m;
+ if(!sel&&S.jobs.length)sel=S.jobs[0].id;
+ document.getElementById('jobs').innerHTML=S.jobs.map(j=>`<div class="job ${j.id===sel?'sel':''}" onclick="sel='${j.id}';follow=true;render()"><i class="dot ${j.status}"></i><span>${j.steps.join(' → ')}</span><span style="color:var(--mut)">${j.cmd?esc(j.cmd):''}</span><span style="margin-left:auto;color:var(--mut)">${j.ended?Math.round(j.ended-j.started)+'s':j.status}</span></div>`).join('');
+ const j=S.jobs.find(x=>x.id===sel);const pre=document.getElementById('log');
+ if(j){pre.textContent=j.log.join('\n')||'…';if(follow)pre.scrollTop=pre.scrollHeight;}
+}
+document.getElementById('log').addEventListener('scroll',e=>{const p=e.target;follow=p.scrollTop+p.clientHeight>=p.scrollHeight-8;});
+async function tick(){try{S=await (await fetch('/api/state')).json();render();}catch(e){}}
+tick();setInterval(tick,1500);
+</script></body></html>"""
+
+
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+
+    def _send(self, code, body, ctype="application/json"):
+        data = body if isinstance(body, bytes) else json.dumps(body, default=str).encode() if ctype == "application/json" else body.encode()
+        self.send_response(code); self.send_header("Content-Type", ctype + "; charset=utf-8"); self.send_header("Content-Length", str(len(data)))
+        self.end_headers(); self.wfile.write(data)
+
+    def do_GET(self):
+        u = urlparse(self.path)
+        if u.path == "/": return self._send(200, HTML, "text/html")
+        if u.path == "/api/state": return self._send(200, state())
+        self._send(404, {"error": "not found"})
+
+    def do_POST(self):
+        u = urlparse(self.path); q = parse_qs(u.query)
+        if u.path != "/api/run": return self._send(404, {"error": "not found"})
+        if any(j["status"] in ("running", "queued") for j in jobs.values()):
+            return self._send(409, {"error": "ya hay una ejecución en marcha"})
+        params = {"per": str(max(1, int(q.get("per", ["8"])[0]))), "per_family": str(max(1, int(q.get("per_family", ["2"])[0]))),
+                  "n_personas": str(max(1, min(10, int(q.get("n_personas", ["4"])[0]))))}
+        ids = CHAINS.get(q.get("chain", [""])[0]) or [s for s in q.get("steps", [""])[0].split(",") if s]
+        known = {s["id"] for s in STEPS}
+        if not ids or any(i not in known for i in ids): return self._send(400, {"error": "paso desconocido"})
+        self._send(200, {"job": start(ids, params)})
+
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("--port", type=int, default=8793); ap.add_argument("--no-open", action="store_true")
+    a = ap.parse_args()
+    url = f"http://localhost:{a.port}"
+    print(f"AngryRobots pipeline UI → {url}", flush=True)
+    if not a.no_open:
+        threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+    ThreadingHTTPServer(("0.0.0.0", a.port), H).serve_forever()
+
+
+if __name__ == "__main__":
+    main()

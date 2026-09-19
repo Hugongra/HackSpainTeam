@@ -28,4 +28,11 @@ what keeps precision honest, and they caught two false positives in the guard.
 /usr/bin/python3 ar_fixtures.py               # regenerate (deterministic)
 /usr/bin/python3 ar_score.py fixtures/corpus.jsonl
 /usr/bin/python3 ar_dashboard.py --verdicts fixtures/verdicts.json
+/usr/bin/python3 ar_cluster.py                # unsupervised view of the same set
 ```
+
+The twins are also what makes this corpus **adversarial to unsupervised clustering**: shared
+surface features are exactly what a distance metric sees, so each dangerous case's nearest
+neighbour is usually its own benign twin. [`ar_cluster.py`](../ar_cluster.py) measures that —
+malignancy ARI +0.012 (p=0.58) while tool modality comes out at +0.28 — and
+[`knowledge/16`](../knowledge/16-unsupervised-clustering.md) writes up why.

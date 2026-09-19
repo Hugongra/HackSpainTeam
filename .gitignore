@@ -17,6 +17,7 @@ Thumbs.db
 dist/
 build/
 *.log
+__pycache__/
 
 # hr_watch local state
 hr_watch.sqlite
@@ -25,5 +26,9 @@ hr_watch.jsonl
 # raw API dumps from hr_explore (org data)
 explore/
 
-# guard output (regenerate with ar_score.py)
+# guard output (regenerate with ar_score.py / ar_cluster.py)
 fixtures/verdicts.json
+fixtures/clusters.json
+
+# generated training data (regenerate from the pipeline UI: ar_pipeline_ui.py)
+data/
