@@ -14,6 +14,8 @@ Prueba rápida:
     curl -X POST http://localhost:8787/audit -H "Content-Type: application/json" -d @example_payload.json
 """
 import os
+import threading
+from collections import OrderedDict, deque
 
 import yaml
 from dotenv import load_dotenv
@@ -61,11 +63,57 @@ class ProposedAction(BaseModel):
 
 
 class AuditRequest(BaseModel):
-    workflow_goal: str
+    # Con "workflow", objetivo y restricciones salen del perfil en config.yaml;
+    # workflow_goal / constraints explícitos tienen prioridad sobre el perfil.
+    workflow: str | None = None
+    workflow_goal: str = ""
     constraints: list[str] = []
+    # Con "run_id" (en HappyRobot: current.run_id), AngryRobot recuerda las
+    # últimas acciones del run y no hace falta mandar session_history.
+    run_id: str | None = None
     reasoning_trace: str = ""
     proposed_action: ProposedAction
     session_history: list[dict] = []  # últimas acciones: [{"tool":..., "args":...}, ...]
+
+
+def _resolve_context(request: AuditRequest) -> tuple[str, list[str]]:
+    profile = {}
+    if request.workflow:
+        profile = CONFIG.get("workflow_profiles", {}).get(request.workflow)
+        if profile is None:
+            raise HTTPException(status_code=400, detail=f"workflow '{request.workflow}' no tiene perfil en config.yaml")
+    goal = request.workflow_goal or profile.get("goal", "")
+    if not goal:
+        raise HTTPException(status_code=400, detail="Falta workflow_goal (o un 'workflow' con perfil en config.yaml)")
+    return goal, request.constraints or profile.get("constraints", [])
+
+
+# Historial corto por run, en memoria. Por qué aquí y no en HappyRobot: el
+# workflow no tiene una forma sencilla de acumular una lista de acciones entre
+# nodos, y sin historial el detector de bucles nunca ve nada. Por qué en memoria
+# y no en SQLite: solo hace falta mientras dura la llamada; si el servicio se
+# reinicia se pierde el historial de los runs en curso, nada más.
+MAX_TRACKED_RUNS = 1000
+_RUNS: "OrderedDict[str, deque]" = OrderedDict()
+_RUNS_LOCK = threading.Lock()
+
+
+def _run_history(run_id: str | None) -> list[dict]:
+    if not run_id:
+        return []
+    with _RUNS_LOCK:
+        return list(_RUNS.get(run_id, []))
+
+
+def _remember(run_id: str | None, action: dict) -> None:
+    if not run_id:
+        return
+    with _RUNS_LOCK:
+        runs = _RUNS.setdefault(run_id, deque(maxlen=CONFIG["history_window"]))
+        runs.append({"tool": action.get("tool"), "args": action.get("args", {})})
+        _RUNS.move_to_end(run_id)
+        while len(_RUNS) > MAX_TRACKED_RUNS:
+            _RUNS.popitem(last=False)
 
 
 @app.get("/health")
@@ -76,7 +124,11 @@ def health():
 @app.post("/audit", dependencies=[Depends(verify_caller)])
 def audit(request: AuditRequest):
     action = request.proposed_action.model_dump()
-    history = request.session_history[-CONFIG["history_window"]:]
+    goal, constraints = _resolve_context(request)
+    history = (request.session_history or _run_history(request.run_id))[-CONFIG["history_window"]:]
+    # Se registra ANTES de decidir: un intento bloqueado también cuenta para
+    # detectar que el agente insiste en lo mismo.
+    _remember(request.run_id, action)
 
     # Stage 0: filtros duros. Si ya está claro que es un KILL, no gastamos ni un
     # euro en el LLM auditor — cortamos aquí mismo.
@@ -84,7 +136,7 @@ def audit(request: AuditRequest):
     if hard.is_kill:
         case_id = save_case(
             DB_PATH,
-            workflow_goal=request.workflow_goal, constraints=request.constraints,
+            workflow_goal=goal, constraints=constraints,
             reasoning_trace=request.reasoning_trace, proposed_action=action,
             session_history=history, hard_filter_hits=[h.reason for h in hard.hits],
             dimensions={}, ira_score=100.0, verdict="KILL",
@@ -105,8 +157,8 @@ def audit(request: AuditRequest):
 
     # Stage 2: juez independiente (LLM distinto al agente).
     dims = score_dimensions(
-        workflow_goal=request.workflow_goal,
-        constraints=request.constraints,
+        workflow_goal=goal,
+        constraints=constraints,
         reasoning_trace=request.reasoning_trace,
         proposed_action=action,
         session_history=history,
@@ -121,7 +173,7 @@ def audit(request: AuditRequest):
     # medir cuánto estáis molestando al agente con avisos innecesarios.
     case_id = save_case(
         DB_PATH,
-        workflow_goal=request.workflow_goal, constraints=request.constraints,
+        workflow_goal=goal, constraints=constraints,
         reasoning_trace=request.reasoning_trace, proposed_action=action,
         session_history=history, hard_filter_hits=[h.reason for h in hard.hits],
         dimensions=result.dimensions, ira_score=result.ira_score, verdict=result.verdict,
