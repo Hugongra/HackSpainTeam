@@ -213,3 +213,53 @@ def test_forced_trait_still_works():
     assert r["truth"]["trait"] == "platform_sabotage" and r["truth"]["seat"] == "comms"
     client.post(f"/v1/rounds/{r['id']}/stop", headers=ADMIN)
     assert client.post("/v1/rounds", headers=ADMIN, json={"forced_trait": "nope"}).status_code == 400
+
+
+# ---------------------------------------------------------------- el workflow montado en el Board (Build)
+def test_layout_from_gives_the_same_ids_the_console_computes():
+    seats = rounds.layout_from([{"kind": "intake"}, {"kind": "pricing"}, {"kind": "pricing"}, {"kind": "booking", "source": "openai"}, {"kind": "comms"}])
+    assert [s["seat"] for s in seats] == ["intake", "pricing", "pricing-2", "booking", "comms"]
+    assert [s["relay"] for s in seats] == [0, 0, 1, 0, 0]
+    assert seats[2]["source"] != seats[1]["source"]                 # un relevo va en otro proveedor
+    assert seats[3]["source"] == "openai" and seats[3]["source_label"] == "OpenAI"
+    assert seats[2]["role"].endswith("relevo 1") and seats[2]["workflow_id"] == "desk-pricing-2"
+    for s in seats:
+        assert s["traits"] == [t for t in rounds.TRAITS if rounds.compatible(t, s)]
+    assert rounds.layout(8) == rounds.layout_from(rounds.default_spec(8))   # el montaje por defecto pasa por el mismo camino
+
+
+def test_layout_from_rejects_what_the_scripts_cannot_play():
+    import pytest
+    with pytest.raises(ValueError):
+        rounds.layout_from([{"kind": "intake"}, {"kind": "intake"}])            # la llamada solo empieza una vez
+    with pytest.raises(ValueError):
+        rounds.layout_from([{"kind": "comms"}, {"kind": "comms"}])              # y solo acaba una vez
+    with pytest.raises(ValueError):
+        rounds.layout_from([{"kind": "pricing", "source": "acme"}])
+    with pytest.raises(ValueError):
+        rounds.layout_from([{"kind": "pricing"}] * (rounds.MAX_AGENTS + 1))
+    with pytest.raises(ValueError):
+        rounds.layout_from([])
+
+
+def test_round_from_the_board_uses_those_seats_in_that_order():
+    spec = [{"kind": "intake", "source": "claude"}, {"kind": "booking"}, {"kind": "booking"}, {"kind": "comms"}]
+    res = client.post("/v1/rounds", json={"pace": "auto", "delay": 0, "call_on_kill": False, "seats": spec,
+                                          "malicious": {"mode": "pick", "seat": "booking-2", "trait": "self_report"}}, headers=ADMIN)
+    assert res.status_code == 200, res.text
+    v = res.json()
+    assert [s["seat"] for s in v["seats"]] == ["intake", "booking", "booking-2", "comms"]
+    assert v["seats"][0]["source"] == "claude" and v["options"]["n_agents"] == 4
+    assert v["truth"]["seat"] == "booking-2"
+    for _ in range(200):
+        v = client.get(f"/v1/rounds/{v['id']}", headers=ADMIN).json()
+        if v["status"] in ("done", "error"):
+            break
+        time.sleep(0.05)
+    assert v["status"] == "done" and v["outcome"]
+    bad = client.post("/v1/rounds", json={"seats": [{"kind": "intake"}, {"kind": "intake"}]}, headers=ADMIN)
+    assert bad.status_code == 400 and "Recepción" in bad.json()["detail"]
+    cfg = client.get("/v1/rounds/config", headers=ADMIN).json()
+    assert [k["kind"] for k in cfg["kinds"]] == ["intake", "dispatch", "pricing", "booking", "comms"]
+    assert cfg["quick_sizes"] == [3, 5, 8] and len(cfg["default_specs"]["8"]) == 8
+    assert "self_report" in cfg["kinds"][3]["relay_traits"]

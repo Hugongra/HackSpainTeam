@@ -1,9 +1,10 @@
-/* The Round tab: "Randomize agents" fills the five seats of the carrier-desk workflow with random agents
-   (name, role, function, two personality traits) and, with probability 0.5, makes ONE of them malicious
-   — random seat, random malicious trait. The service then runs the call seat by seat and AngryRobot
-   audits every action of every agent. Step mode stops after each audited action so the operator can
-   read WHY it got its IRA: impact, suspicion, hard floors, the matrix, the formula, each signal with its
-   evidence, and the judge. Everything here comes from GET /v1/rounds/<id> (angryrobot/rounds.py). */
+/* The Round tab: "Randomize agents" fills the seats of the workflow built on the Build tab (the agent
+   blocks on the board, in call order: `spec`) with random agents (name, personality) and, with
+   probability 0.5, makes ONE of them malicious — random seat, random malicious trait. The service then
+   runs the call seat by seat through that same graph and AngryRobot audits every action of every agent.
+   Step mode stops after each audited action so the operator can read WHY it got its IRA: impact,
+   suspicion, hard floors, the matrix, the formula, each signal with its evidence, and the judge.
+   Everything here comes from GET /v1/rounds/<id> (angryrobot/rounds.py); the canvas is the Board's. */
 import React from "react";
 import { Badge, Button, Card, Icon, Select, Switch, Verdict } from "../ds";
 import { api, download } from "../api";
@@ -210,11 +211,13 @@ function Decision({ ev, events, round }) {
 /* ---------------------------------------------------------------- the panel */
 const ROGUE_MODES = [{ value: "random", label: "Coin (50 %)" }, { value: "none", label: "None" }, { value: "pick", label: "I choose" }];
 
-export default function RoundPanel({ live, onRound }) {
-  const [cfg] = useAsync(() => (live ? api.roundConfig() : Promise.resolve(null)), [live]);
+// cfg: GET /v1/rounds/config (fetched once by the Board). spec: the agent blocks on the Build board, in call
+// order, with the seat ids the service will give them. hasCallLever: the HappyRobot call lever is wired on
+// the board, so a KILL places the call. canvas: the Board's React Flow canvas, shown above the IRA map.
+export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever = true, onSetAgents, onEditBuild, canvas }) {
   const [health] = useAsync(() => (live ? api.health().catch(() => null) : Promise.resolve(null)), [live]);
-  const outdated = cfg.error?.status === 404;   // the service answers but has no /v1/rounds: it runs an older commit
-  const [opts, setOpts] = React.useState({ agents: "scripted", pace: "step", delay: 3, call_on_kill: true, blind: false, n_agents: 5,
+  const outdated = cfg?.error?.status === 404;   // the service answers but has no /v1/rounds: it runs an older commit
+  const [opts, setOpts] = React.useState({ agents: "scripted", pace: "step", delay: 3, blind: false,
                                            rogue: "random", rogue_seat: "", rogue_trait: "" });
   const [round, setRound] = React.useState(null);
   const [roundId, setRoundId] = React.useState(() => store.get());
@@ -253,15 +256,21 @@ export default function RoundPanel({ live, onRound }) {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const seatsFor = cfg.data?.layouts?.[opts.n_agents] || [];
+  const seatsFor = spec;
   const pickedSeat = seatsFor.find((x) => x.seat === opts.rogue_seat);
-  const traitOptions = Object.entries(cfg.data?.traits || {}).filter(([k]) => !pickedSeat || (pickedSeat.traits || []).includes(k));   // only what that agent can actually do
-  const randomize = () => act(async () => {
+  const canPlay = new Set(seatsFor.flatMap((x) => x.traits || []));   // traits some block on the board can actually play
+  const traitOptions = Object.entries(cfg?.data?.traits || {}).filter(([k]) => (pickedSeat ? (pickedSeat.traits || []).includes(k) : canPlay.has(k)));
+  const quick = cfg?.data?.quick_sizes || [3, 5, 8];
+  const isDefault = (n) => { const d = cfg?.data?.default_specs?.[n]; return d ? d.length === spec.length && d.every((s, i) => s.kind === spec[i]?.kind) : spec.length === n; };
+  const phone = cfg?.data?.call?.phone || "+34689257681";
+  const randomize = () => spec.length && act(async () => {
     const malicious = opts.rogue === "pick" ? { mode: "pick", seat: opts.rogue_seat || null, trait: opts.rogue_trait || null } : { mode: opts.rogue };
-    const r = await api.startRound({ agents: opts.agents, pace: opts.pace, delay: Number(opts.delay) || 0, call_on_kill: opts.call_on_kill,
-                                     blind: opts.blind, n_agents: Number(opts.n_agents), malicious });
+    const r = await api.startRound({ agents: opts.agents, pace: opts.pace, delay: Number(opts.delay) || 0, call_on_kill: hasCallLever,
+                                     blind: opts.blind, seats: spec.map((s) => ({ kind: s.kind, source: s.source })), malicious });
     store.set(r.id); setRoundId(r.id); setRound(r); setPinned(null); onRound?.(r);
   });
+  // The rogue seat picked earlier may no longer be on the board.
+  React.useEffect(() => { if (opts.rogue_seat && !seatsFor.some((x) => x.seat === opts.rogue_seat)) setOpts((o) => ({ ...o, rogue_seat: "", rogue_trait: "" })); }, [seatsFor, opts.rogue_seat]);
 
   if (!live) {
     return (
@@ -277,7 +286,7 @@ export default function RoundPanel({ live, onRound }) {
     return (
       <div className="round">
         <Card padding={20} eyebrow="THE SERVICE IS OUT OF DATE" ground="sand">
-          <p className="ar-small">The console is new but the AngryRobot service still runs commit <b>{health.data?.commit || "unknown"}</b>, which has no rounds. Nothing can run until it is redeployed.</p>
+          <p className="ar-small">The console is new but the AngryRobot service still runs commit <b>{health?.data?.commit || "unknown"}</b>, which has no rounds. Nothing can run until it is redeployed.</p>
           <p className="ar-small" style={{ marginTop: 10 }}>Render → service <b>hackspainteam</b> → Manual Deploy → Deploy latest commit. Then reload this page.</p>
         </Card>
       </div>
@@ -294,11 +303,13 @@ export default function RoundPanel({ live, onRound }) {
   const malSeat = round?.seats.find((s) => s.seat === truth.seat);
   const optionsForm = (
     <div className="round-form">
-      <div className="speed">
-        <div className="speed-head"><span className="ar-overline muted">Agents in the workflow</span><span className="ar-caption"><b>{opts.n_agents}</b></span></div>
-        <input type="range" min={cfg.data?.min_agents || 2} max={cfg.data?.max_agents || 8} step="1" value={opts.n_agents}
-               onChange={(e) => setOpts((o) => ({ ...o, n_agents: Number(e.target.value), rogue_seat: "" }))} aria-label="Number of agents" />
-        <div className="chips">{seatsFor.map((x) => <span key={x.seat} className="chip">{x.role}</span>)}</div>
+      <div className="round-agents">
+        <div className="speed-head"><span className="ar-overline muted">Agents in the workflow</span><span className="ar-caption"><b>{spec.length}</b> blocks on the board</span></div>
+        <div className="seg" role="group" aria-label="Number of agents">
+          {quick.map((n) => <button key={n} className={isDefault(n) ? "is-on" : ""} onClick={() => onSetAgents?.(n)} title={`Rebuild the board with the default ${n}-agent workflow`}>{n} agents</button>)}
+        </div>
+        <div className="chips">{seatsFor.map((x) => <span key={x.seat} className="chip" title={`${x.seat} · ${x.source}`}>{x.order}. {x.role}</span>)}</div>
+        <p className="ar-caption muted">Any other mix: drag blocks on the <button className="dec-toggle" style={{ display: "inline", padding: 0 }} onClick={onEditBuild}>Build tab</button>. Each block is a seat of the call, on its own provider.</p>
       </div>
       <div>
         <span className="ar-overline muted">Malicious agent</span>
@@ -320,11 +331,13 @@ export default function RoundPanel({ live, onRound }) {
       </div>
       <Select id="rd-agents" label="Agents are" value={opts.agents} onChange={set("agents")}
         options={[{ value: "scripted", label: "Forced LLM (the rogue always tries · fast, reliable)" },
-                  { value: "hr", label: `Real LLM${cfg.data && !cfg.data.hr_available ? " (no HappyRobot key on the service)" : " (real HappyRobot agents · slower)"}` }]} />
+                  { value: "hr", label: `Real LLM${cfg?.data && !cfg.data.hr_available ? " (no HappyRobot key on the service)" : " (real HappyRobot agents · slower)"}` }]} />
       <SpeedSlider id="rd-speed" pace={opts.pace} delay={opts.delay} onChange={(sp) => setOpts((o) => ({ ...o, pace: sp.pace, delay: sp.delay ?? o.delay }))} />
-      <Switch id="rd-call" label={`Call ${cfg.data?.call?.phone || "+34689257681"} if an agent is killed`} checked={opts.call_on_kill} onChange={set("call_on_kill")} />
+      <p className="ar-caption muted"><Icon name="phone" size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
+        {hasCallLever ? `A KILL calls ${phone}: the HappyRobot call lever is on the board.` : "No HappyRobot call lever on the board: a KILL calls nobody. Add the lever on the Build tab to change that."}</p>
       <Switch id="rd-blind" label="Blind: hide the malicious agent until the end" checked={opts.blind} onChange={set("blind")} />
-      <Button onClick={() => { setShowOpts(false); randomize(); }} disabled={busy} iconLeft={<Icon name="refresh" size={16} />}>Randomize agents</Button>
+      <Button onClick={() => { setShowOpts(false); randomize(); }} disabled={busy || !spec.length} iconLeft={<Icon name="refresh" size={16} />}>Randomize agents</Button>
+      {!spec.length && <p className="ar-caption" style={{ color: "var(--status-negative)" }}>No agent blocks on the board. Pick 3 · 5 · 8 above or build the workflow on the Build tab.</p>}
     </div>
   );
 
@@ -334,10 +347,10 @@ export default function RoundPanel({ live, onRound }) {
         <Card padding={16} eyebrow="NEW ROUND">
           {round && !showOpts ? (
             <div className="round-controls" style={{ marginTop: 0 }}>
-              <Button onClick={randomize} disabled={busy} iconLeft={<Icon name="refresh" size={16} />}>Randomize agents</Button>
+              <Button onClick={randomize} disabled={busy || !spec.length} iconLeft={<Icon name="refresh" size={16} />}>Randomize agents</Button>
               <Button variant="ghost" size="sm" onClick={() => setShowOpts(true)}>Options</Button>
               <span className="ar-caption muted" style={{ alignSelf: "center" }}>
-                {opts.n_agents} agents · rogue {opts.rogue === "pick" ? "chosen" : opts.rogue === "none" ? "none" : "coin"} · {opts.agents === "hr" ? "Real LLM" : "Forced LLM"}
+                {spec.length} agents on the board · rogue {opts.rogue === "pick" ? "chosen" : opts.rogue === "none" ? "none" : "coin"} · {opts.agents === "hr" ? "Real LLM" : "Forced LLM"}
               </span>
             </div>
           ) : optionsForm}
@@ -364,10 +377,11 @@ export default function RoundPanel({ live, onRound }) {
             )}
           </Card>
         )}
-        {!round && <p className="ar-caption muted" style={{ padding: "4px 4px 0" }}>Pick how many agents, whether one of them is malicious (a coin, none, or you choose which and what it does), and the speed. AngryRobot watches every agent without knowing.</p>}
+        {!round && <p className="ar-caption muted" style={{ padding: "4px 4px 0" }}>The round runs through the workflow on the board: one random agent per block, maybe one of them malicious (a coin, none, or you choose which and what it does). AngryRobot watches every agent without knowing.</p>}
       </div>
 
       <div className="round-col round-col--main">
+        {canvas && <Card padding={8} eyebrow="THE WORKFLOW · FROM THE BUILD TAB">{canvas}</Card>}
         {round ? (
           <>
             <Card padding={14} eyebrow="IRA OF EVERY ACTION">
@@ -395,7 +409,7 @@ export default function RoundPanel({ live, onRound }) {
               </Card>
             )}
           </>
-        ) : <p className="ar-caption muted" style={{ padding: "4px 4px 0" }}>The IRA of every action will show up here once a round starts.</p>}
+        ) : <p className="ar-caption muted" style={{ padding: "4px 4px 0" }}>The IRA of every action will show up here once a round starts, and each block above shows who sits there and how it goes.</p>}
       </div>
 
       <div className="round-col round-col--data">
