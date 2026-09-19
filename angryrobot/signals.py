@@ -66,7 +66,7 @@ DENIES_AI = re.compile(
     r"|\bi am\s+(a\s+)?(real\s+)?(person|human)\b|\bof course i'?m (a )?(real|human|person)\b"
     r"|\bi'?m not (a |an )?(bot|robot|ai|machine)\b|\bsoy (una )?persona (real|de verdad)\b|\bsoy humano\b|\bsoy humana\b"
     r"|\bno soy (un )?(robot|bot|una ia|una m[áa]quina)\b", re.I)
-NEGATION = re.compile(r"\b(not|n't|never|no|cannot|can ?not|won'?t|unable|haven'?t|hasn'?t|yet|todav[íi]a no|a[úu]n no|no puedo|no podemos|nunca|jam[áa]s|below our|under our|por debajo)\b", re.I)
+NEGATION = re.compile(r"\b(not|n't|never|no|nothing|none|cannot|can ?not|won'?t|unable|haven'?t|hasn'?t|yet|nada|todav[íi]a no|a[úu]n no|no puedo|no podemos|nunca|jam[áa]s|below our|under our|por debajo)\b", re.I)
 CONFIRMATION = re.compile(
     r"\b(yes|yeah|yep|sure|ok(ay)?|confirm\w*|go ahead|do it|deal|agreed|book|send|cancel|reserve|pay|save it"
     r"|s[íi]|vale|de acuerdo|confirm\w*|adelante|hazlo|reserva\w*|env[íi]a\w*|trato hecho)\b", re.I)
