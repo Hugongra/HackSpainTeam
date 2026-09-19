@@ -168,7 +168,7 @@ export default function RoundPanel({ live, onRound }) {
   const [cfg] = useAsync(() => (live ? api.roundConfig() : Promise.resolve(null)), [live]);
   const [health] = useAsync(() => (live ? api.health().catch(() => null) : Promise.resolve(null)), [live]);
   const outdated = cfg.error?.status === 404;   // the service answers but has no /v1/rounds: it runs an older commit
-  const [opts, setOpts] = React.useState({ agents: "scripted", pace: "step", delay: 3, call_on_kill: true, blind: false });
+  const [opts, setOpts] = React.useState({ agents: "scripted", pace: "step", delay: 3, call_on_kill: true, blind: false, forced_trait: null });
   const [round, setRound] = React.useState(null);
   const [roundId, setRoundId] = React.useState(() => store.get());
   const [err, setErr] = React.useState(null);
@@ -234,12 +234,17 @@ export default function RoundPanel({ live, onRound }) {
           <div className="round-controls" style={{ marginTop: 0 }}>
             <Button onClick={randomize} disabled={busy} iconLeft={<Icon name="refresh" size={16} />}>Randomize agents</Button>
             <Button variant="ghost" size="sm" onClick={() => setShowOpts(true)}>Options</Button>
-            <span className="ar-caption muted" style={{ alignSelf: "center" }}>{opts.agents === "llm" ? "Real LLM" : "Scripted"}{opts.call_on_kill ? " · call on kill" : ""}</span>
+            <span className="ar-caption muted" style={{ alignSelf: "center" }}>{opts.agents === "llm" ? "Real LLM" : "Scripted"}{opts.call_on_kill ? " · call on kill" : ""} · {opts.forced_trait ? cfg.data?.traits?.[opts.forced_trait]?.family || opts.forced_trait : "random category"}</span>
           </div>
         ) : (
         <div className="round-form">
           <Select id="rd-agents" label="Agents" value={opts.agents} onChange={set("agents")}
             options={[{ value: "scripted", label: "Scripted (always tries its trait)" }, { value: "llm", label: `Real LLM${cfg.data && !cfg.data.llm_available ? " (no key on the service)" : ""}` }]} />
+          <Select id="rd-trait" label="Rogue category" value={opts.forced_trait || ""} onChange={(v) => setOpts((o) => ({ ...o, forced_trait: (v?.target ? v.target.value : v) || null }))}
+            options={[{ value: "", label: "Random (coin flip, any category)" },
+                     ...Object.entries(cfg.data?.traits || {}).sort(([, a], [, b]) => (a.family || "").localeCompare(b.family || ""))
+                       .map(([id, t]) => ({ value: id, label: `${t.family} — ${t.label}` }))]} />
+          {opts.forced_trait && <p className="ar-caption muted">Always malicious this round — the seat is still drawn at random among {cfg.data?.traits?.[opts.forced_trait]?.seats?.join(", ")}.</p>}
           <SpeedSlider id="rd-speed" pace={opts.pace} delay={opts.delay} onChange={(sp) => setOpts((o) => ({ ...o, pace: sp.pace, delay: sp.delay ?? o.delay }))} />
           <Switch id="rd-call" label={`Call ${cfg.data?.call?.phone || "+34689257681"} if an agent is killed`} checked={opts.call_on_kill} onChange={set("call_on_kill")} />
           <Switch id="rd-blind" label="Blind: hide the malicious agent until the end" checked={opts.blind} onChange={set("blind")} />

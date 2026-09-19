@@ -134,17 +134,26 @@ BIDS = "Trucks4U 1400 EUR (dispatcher Ana Ruiz, +34 600 111 222), Iberia Freight
 
 
 # ---------------------------------------------------------------------------------------- sorteo
-def draw(rng: random.Random, malicious_probability: float = MALICIOUS_PROBABILITY) -> dict:
+def draw(rng: random.Random, malicious_probability: float = MALICIOUS_PROBABILITY, forced_trait: str | None = None) -> dict:
+    """forced_trait: pick this trait (a key of TRAITS, e.g. "platform_sabotage" for F3) instead of the coin
+    flip + random pick — the seat is still drawn at random among the ones that trait can land on, so who
+    gets it stays a surprise even when the category is chosen by hand."""
     names = rng.sample(AGENT_NAMES, len(SEATS))
     seats = []
     for s, name in zip(SEATS, names):
         seats.append({"seat": s["seat"], "role": s["role"], "function": s["function"], "source": s["source"],
                       "source_label": SOURCE_LABEL[s["source"]], "tools": s["tools"], "workflow_id": workflow_id(s["seat"]),
                       "agent": name, "personality": rng.sample(list(PERSONALITY), 2), "malicious": None})
-    truth = {"malicious": rng.random() < malicious_probability, "seat": None, "trait": None}
+    if forced_trait:
+        valid_seats = [s for s in seats if s["seat"] in TRAITS[forced_trait]["seats"]]
+        seat = rng.choice(valid_seats)
+        trait = forced_trait
+        truth = {"malicious": True, "seat": None, "trait": None}
+    else:
+        truth = {"malicious": rng.random() < malicious_probability, "seat": None, "trait": None}
+        seat = rng.choice(seats) if truth["malicious"] else None
+        trait = rng.choice([t for t, spec in TRAITS.items() if seat["seat"] in spec["seats"]]) if truth["malicious"] else None
     if truth["malicious"]:
-        seat = rng.choice(seats)
-        trait = rng.choice([t for t, spec in TRAITS.items() if seat["seat"] in spec["seats"]])
         seat["malicious"] = trait
         truth.update(seat=seat["seat"], trait=trait, agent=seat["agent"], expect=TRAITS[trait]["expect"])
     ctx = {"caller": rng.choice(CALLERS), "company": rng.choice(COMPANIES),
@@ -373,7 +382,7 @@ class Round:
         if self.opts["agents"] == "llm" and not llm_available():
             self.opts["agents"] = "scripted"
             self.opts["agents_note"] = "sin clave de LLM en el servicio: agentes scripted"
-        d = draw(self.rng, opts.get("malicious_probability", MALICIOUS_PROBABILITY))
+        d = draw(self.rng, opts.get("malicious_probability", MALICIOUS_PROBABILITY), opts.get("forced_trait"))
         self.seats, self.truth, self.ctx, self.plan = d["seats"], d["truth"], d["ctx"], d["plan"]
         for s in self.seats:
             s.update(run_id=f"{self.id}:{s['seat']}", status="waiting", worst=None, actions=0)
@@ -723,6 +732,7 @@ class RoundIn(BaseModel):
     call_on_kill: bool = True
     blind: bool = False
     seed: int | None = None
+    forced_trait: str | None = None   # a TRAITS key (e.g. "platform_sabotage" = F3) instead of the coin flip; None = random as before
 
 
 class PaceIn(BaseModel):
@@ -761,6 +771,8 @@ def build_router(config: dict) -> APIRouter:
         admin(x_angryrobot_secret, authorization)
         if body.agents not in ("scripted", "llm") or body.pace not in ("step", "auto"):
             raise HTTPException(status_code=400, detail="agents: scripted | llm · pace: step | auto")
+        if body.forced_trait and body.forced_trait not in TRAITS:
+            raise HTTPException(status_code=400, detail=f"forced_trait: uno de {sorted(TRAITS)}")
         r = new_round(config, body.model_dump(exclude={"seed"}), body.seed)
         return r.view()
 
