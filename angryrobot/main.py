@@ -66,7 +66,7 @@ def _profile(name: str | None, goal: str = "", constraints: list | None = None) 
 def health():
     agent = upstream_of(CONFIG.get("workflow_profiles", {}).get("default", {}))["model"]
     judge = auditor.judge_model()
-    return {"status": "happy", "version": "2.0", "judge": {"provider": auditor.provider(), "model": judge},
+    return {"status": "happy", "version": "2.0", "commit": os.environ.get("RENDER_GIT_COMMIT", "")[:7], "judge": {"provider": auditor.provider(), "model": judge},
             "agent_default_model": agent,
             "independent": auditor.family(agent) != auditor.family(judge),
             "profiles": sorted(CONFIG.get("workflow_profiles", {}))}
