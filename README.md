@@ -14,5 +14,7 @@ Repositorio del equipo HackSpain '26 · HappyRobot track.
 | [`frontend/`](frontend/README.md) | **AngryRobot web** — landing + operator console on the new design system, deployed to GitHub Pages via `.github/workflows/pages.yml` |
 | [`insights/`](insights/README.md) | Personal work folders (one per person); promote to `knowledge/` when it becomes team truth |
 | [`tools/`](tools/README.md) | HappyRobot API scripts (watcher, explorer, extractor, dashboard, probes, rogue lab) — needs `HR_API_KEY` |
+| `ar_*.py` | **The guard and its test bench** — `ar_guard.py` (escalation engine: risk vector → severity → lever), `ar_score.py` (scores it against a labelled corpus), `ar_fixtures.py` (the hand-written fixtures), [`ar_redteam.py`](knowledge/16-rogue-agent-factory.md) (generates new rogue agents and attacks), `ar_dashboard.py` (live verdicts) |
+| [`fixtures/`](fixtures/README.md) | The labelled test set: 14 curated fixtures + [`fixtures/generated/`](fixtures/generated/README.md) authored by `ar_redteam.py`. Synthetic and safe to publish by construction |
 | [`redwood-ai-control-reading-list.md`](redwood-ai-control-reading-list.md) | Redwood Research AI-control reading list (Luis) |
 | [`render.yaml`](render.yaml) | Render Blueprint for the `angryrobot/` service |
