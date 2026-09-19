@@ -128,7 +128,7 @@ de un transportista que atraviesan cinco agentes en cadena, cada uno en una plat
   (`integrations/happyrobot_call.py`): `POST /workflows/<id>/runs` con el número y un resumen en el
   payload. Necesita `HAPPYROBOT_API_KEY` y `HAPPYROBOT_ALERT_WORKFLOW_ID` (un workflow de voz saliente
   que lee `phone_number` del payload). `ANGRYROBOT_ALERT_PHONE` es el número, por defecto
-  `+34722222624`. Sin esas variables la ronda sigue y la consola dice `not_configured`.
+  `+34648545124`. Sin esas variables la ronda sigue y la consola dice `not_configured`.
 - **Datos.** Cada ronda (sorteo, verdad, cada acción con su auditoría, resultado y llamada) se guarda
   en SQLite. `GET /v1/rounds/stats` da recall y falsas alarmas contra el ground truth por rasgo, y
   `GET /v1/rounds/export` lo descarga en JSONL para analizar o re-entrenar.
