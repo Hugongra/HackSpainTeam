@@ -1,18 +1,19 @@
-# Builds the AngryRobots (PhoneFlow fork) frontend (angryrobots/apps/app) and deploys it to GitHub Pages.
+# Builds the AngryRobot frontend (frontend/: landing + operator console, built on the
+# "Angry Robots logo rework" design system) and deploys it to GitHub Pages.
 #
-# One-time setup (needs repo admin): Settings → Pages → Build and deployment →
-# Source: "GitHub Actions". Then set a repository variable VITE_API_URL pointing
-# at wherever the backend runs (Settings → Secrets and variables → Actions → Variables).
+# The console talks to the AngryRobot service from the browser. Point it elsewhere with the
+# repository variable VITE_ANGRYROBOT_API (Settings → Secrets and variables → Actions → Variables);
+# the service must list this Pages origin in ANGRYROBOT_CORS_ORIGINS. No secret is ever built in:
+# operators paste the shared secret in the console, and it stays in their browser tab.
+#
+# The previous PhoneFlow-fork app (angryrobots/apps/app) is no longer deployed here; its code is untouched.
 name: pages
 
 on:
   push:
     branches: [main]
     paths:
-      - "angryrobots/apps/app/**"
-      - "angryrobots/packages/ui/**"
-      - "angryrobots/packages/shared/**"
-      - "angryrobots/pnpm-lock.yaml"
+      - "frontend/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -30,33 +31,24 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: angryrobots
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: angryrobots/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
       - name: Build frontend
-        working-directory: angryrobots/apps/app
         env:
           # Project sites are served from /<repo>/; a *.github.io repo is served from /.
           BASE_PATH: ${{ endsWith(github.event.repository.name, '.github.io') && '/' || format('/{0}/', github.event.repository.name) }}
-          VITE_API_URL: ${{ vars.VITE_API_URL || 'http://localhost:3000' }}
-          VITE_FRONTEND_URL: ${{ vars.VITE_FRONTEND_URL || format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) }}
-          VITE_PUBLIC_S3_URL: ${{ vars.VITE_PUBLIC_S3_URL }}
-          VITE_LIVEKIT_AGENT_NAME: ${{ vars.VITE_LIVEKIT_AGENT_NAME || 'voice-agent' }}
-        run: |
-          pnpm build --base="$BASE_PATH"
-          cp dist/index.html dist/404.html   # SPA fallback for client-side routes
+          VITE_ANGRYROBOT_API: ${{ vars.VITE_ANGRYROBOT_API || 'https://hackspainteam.onrender.com' }}
+        run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: angryrobots/apps/app/dist
+          path: frontend/dist
 
   deploy:
     needs: build

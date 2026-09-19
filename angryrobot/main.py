@@ -20,6 +20,7 @@ from collections import deque
 import yaml
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -40,6 +41,17 @@ with open(os.path.join(HERE, "config.yaml"), "r", encoding="utf-8") as f:
 app = FastAPI(title="AngryRobot", version="2.0",
               description="Capa de auditoría IRA por encima de cualquier agente: cada acción, antes de ejecutarse.")
 init_db(DB_PATH)
+# El frontend (GitHub Pages) llama a la API desde el navegador: CORS solo para sus orígenes.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in os.environ.get(
+        "ANGRYROBOT_CORS_ORIGINS",
+        "https://hugongra.github.io,http://localhost:5173,http://localhost:4173").split(",") if o.strip()],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-AngryRobot-Secret", "X-AngryRobot-Run",
+                   "X-AngryRobot-Mode", "X-AngryRobot-Detail"],
+    expose_headers=["X-AngryRobot-Verdict", "X-AngryRobot-IRA", "X-AngryRobot-Run"],
+)
 router = build_router(CONFIG)
 app.include_router(router)
 SHARED_SECRET = os.environ.get("ANGRYROBOT_SHARED_SECRET")

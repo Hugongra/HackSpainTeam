@@ -1,0 +1,23 @@
+/* 4px base. The real rhythm the layouts use is 8 / 12 / 16 / 24 / 32 / 48 / 64 / 96. */
+:root{
+--space-1:4px;  --space-2:8px;   --space-3:12px; --space-4:16px;
+--space-5:24px; --space-6:32px;  --space-7:48px; --space-8:64px;
+--space-9:96px; --space-10:128px;
+
+--gutter-page:64px;
+--gutter-page-wide:5vw;
+--section-gap:96px;
+--card-gap:24px;
+--card-pad:28px;
+--content-max:1440px;
+--measure:66ch;
+
+/* Radius is a semantic signal, not a decoration:
+   flat structural surfaces are SQUARE; only floating glass layers round. */
+--radius-none:0px;
+--radius-hair:2px;
+--radius-glass:18px;
+--radius-glass-sm:12px;
+--radius-pill:999px;
+--radius-icon:23%;
+}

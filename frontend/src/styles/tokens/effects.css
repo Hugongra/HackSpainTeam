@@ -1,0 +1,25 @@
+/* Hairline-first. Flat surfaces separate with 1px rules, not drop shadows.
+   Shadows belong to layers that genuinely float — glass, dialogs, toasts. */
+:root{
+--shadow-hairline:inset 0 0 0 1px rgba(16,17,16,0.10);
+--shadow-hairline-dark:inset 0 0 0 1px rgba(244,241,234,0.14);
+--shadow-none:none;
+--shadow-sm:0 1px 2px rgba(16,17,16,0.08);
+--shadow-md:0 8px 20px rgba(16,17,16,0.10);
+--shadow-lg:0 22px 56px rgba(16,17,16,0.18);
+--shadow-focus:0 0 0 3px var(--focus-ring);
+
+--border-hairline:1px solid var(--border-subtle); /* @kind other */
+--border-control:1px solid var(--border-default); /* @kind other */
+
+--ease-standard:cubic-bezier(0.2,0,0,1); /* @kind other */
+--ease-out:cubic-bezier(0.16,1,0.3,1); /* @kind other */
+--ease-in:cubic-bezier(0.4,0,1,1); /* @kind other */
+--dur-fast:110ms; /* @kind other */
+--dur-base:180ms; /* @kind other */
+--dur-slow:300ms; /* @kind other */
+--dur-reveal:520ms; /* @kind other */
+
+--scrim-top:linear-gradient(180deg,rgba(16,17,16,0.78) 0%,rgba(16,17,16,0) 100%); /* @kind other */
+--scrim-bottom:linear-gradient(0deg,rgba(16,17,16,0.82) 0%,rgba(16,17,16,0) 100%); /* @kind other */
+}

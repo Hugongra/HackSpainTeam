@@ -1,0 +1,32 @@
+/* Element defaults. Kept minimal — components carry their own styling. */
+:root{ color-scheme:light; }
+html{ -webkit-text-size-adjust:100%; }
+body{
+  margin:0;
+  background:var(--surface-page);
+  color:var(--text-body);
+  font-family:var(--font-sans);
+  font-size:var(--type-body-size);
+  line-height:var(--type-body-line);
+  font-weight:var(--weight-regular);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+*,*::before,*::after{ box-sizing:border-box; }
+h1,h2,h3,h4,h5,p,figure{ margin:0; }
+h1,h2{ font-family:var(--font-display); font-weight:var(--weight-display); letter-spacing:-0.03em; }
+h3,h4,h5{ font-family:var(--font-sans); font-weight:var(--weight-medium); }
+a{ color:var(--text-accent); text-decoration:none; }
+a:hover{ color:var(--accent-hover); text-decoration:underline; text-underline-offset:3px; }
+::selection{ background:var(--ar-yellow); color:var(--ar-black); }
+:focus-visible{ outline:2px solid var(--ar-orange); outline-offset:2px; }
+.ar-overline{
+  font-family:var(--font-sans); font-weight:var(--weight-medium);
+  font-size:var(--type-overline-size); line-height:var(--type-overline-line);
+  letter-spacing:var(--type-overline-track); text-transform:uppercase;
+}
+.ar-mono{
+  font-family:var(--font-mono); font-weight:var(--weight-medium); font-size:var(--type-mono-size);
+  line-height:var(--type-mono-line); letter-spacing:var(--type-mono-track);
+  text-transform:uppercase;
+}

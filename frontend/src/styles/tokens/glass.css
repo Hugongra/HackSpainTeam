@@ -1,0 +1,30 @@
+/* Glass is a STRUCTURAL layer, not decoration.
+   It is only legal over photography, video, or a dark ground — never over flat
+   Paper, where it has nothing to refract and just reads as dirty grey.
+   Every glass surface carries three things: a translucent fill, a 1px light
+   border, and a top inner highlight. Drop the highlight and it stops reading
+   as glass and starts reading as a washed-out box. */
+:root{
+--glass-blur:blur(20px) saturate(1.35); /* @kind other */
+--glass-blur-heavy:blur(36px) saturate(1.5); /* @kind other */
+--glass-blur-light:blur(10px) saturate(1.2); /* @kind other */
+
+/* On dark grounds and imagery — the default */
+--glass-fill:rgba(244,241,234,0.10);
+--glass-fill-strong:rgba(244,241,234,0.16);
+--glass-border:rgba(244,241,234,0.22);
+--glass-highlight:inset 0 1px 0 rgba(255,255,255,0.22); /* @kind other */
+--glass-shadow:0 22px 56px rgba(16,17,16,0.38); /* @kind other */
+--glass-text:var(--ar-paper);
+--glass-text-muted:rgba(244,241,234,0.64);
+
+/* On light imagery — a frosted white pane */
+--glass-fill-light:rgba(255,255,255,0.62);
+--glass-border-light:rgba(255,255,255,0.80);
+--glass-highlight-light:inset 0 1px 0 rgba(255,255,255,0.90); /* @kind other */
+--glass-shadow-light:0 18px 44px rgba(16,17,16,0.14); /* @kind other */
+
+/* Hazard glass — the one tinted pane, for escalations over imagery */
+--glass-fill-accent:rgba(228,87,31,0.22);
+--glass-border-accent:rgba(228,87,31,0.46);
+}

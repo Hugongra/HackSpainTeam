@@ -1,0 +1,31 @@
+/* Two families do all the work: a display serif for editorial voice, a
+   grotesque for everything operational. Mono is reserved for identifiers. */
+:root{
+--font-display:"Outfit", system-ui, sans-serif;
+--font-sans:"Outfit", system-ui, sans-serif;
+--font-mono:"Outfit", system-ui, sans-serif;
+
+/* Display — the same grotesque, set very tight at Medium. Negative tracking deepens as size grows. */
+--type-display-size:96px;   --type-display-line:88px;  --type-display-track:-0.03em;
+--type-h1-size:64px;        --type-h1-line:64px;       --type-h1-track:-0.025em;
+--type-h2-size:44px;        --type-h2-line:48px;       --type-h2-track:-0.02em;
+/* Headings — Medium weight */
+--type-h3-size:32px;        --type-h3-line:38px;       --type-h3-track:-0.015em;
+--type-h4-size:24px;        --type-h4-line:30px;       --type-h4-track:-0.01em;
+--type-h5-size:19px;        --type-h5-line:26px;       --type-h5-track:-0.005em;
+/* Body */
+--type-body-lg-size:19px;   --type-body-lg-line:30px;  --type-body-lg-track:0;
+--type-body-size:17px;      --type-body-line:27px;     --type-body-track:0;
+--type-body-sm-size:15px;   --type-body-sm-line:23px;  --type-body-sm-track:0.005em;
+--type-caption-size:13px;   --type-caption-line:19px;  --type-caption-track:0.01em;
+/* Utility — the eyebrow and the spec label. Both Outfit Medium, uppercase, wide-tracked.
+   There is no monospace face: --font-mono resolves to Outfit and exists only so the
+   spec-label tokens read clearly at their call sites. */
+--type-overline-size:12px;  --type-overline-line:14px; --type-overline-track:0.16em;
+--type-mono-size:12px;      --type-mono-line:16px;     --type-mono-track:0.06em;
+
+--weight-regular:400;
+--weight-medium:500;
+--weight-semibold:600;
+--weight-display:500;
+}

@@ -170,8 +170,15 @@ class RunState:
             self.counts[audit["verdict"]] += 1
         self.iras.append(audit["ira_score"])
         self.timeline.append({"at": time.strftime("%H:%M:%S"), "phase": audit.get("phase", "pre"), "kind": audit["kind"],
-                              "action": audit["action"], "verdict": audit["verdict"], "ira": audit["ira_score"],
+                              "audit_id": audit.get("audit_id"), "action": audit["action"], "verdict": audit["verdict"],
+                              "ira": audit["ira_score"], "severity": audit.get("severity"), "decided_by": audit.get("decided_by"),
+                              "impact": audit.get("impact", {}).get("level"), "suspicion": audit.get("suspicion", {}).get("S"),
                               "top_signal": audit["signals"][0]["name"] if audit["signals"] else None,
+                              "signals": [{"name": s["name"], "evidence": s["evidence"][:220], "floor": s["floor"],
+                                           "pw": round(s["p"] * s["w"], 2)} for s in audit["signals"][:8]],
+                              "judge_class": (audit.get("judge") or {}).get("rogue_class"),
+                              "reasoning_source": (audit.get("reasoning") or {}).get("source"),
+                              "reasoning_excerpt": ((audit.get("reasoning") or {}).get("excerpt") or "")[:400],
                               "explanation": audit["explanation"], "enforcement": audit.get("enforcement")})
         self.timeline = self.timeline[-300:]
         if audit["verdict"] == "KILL" and audit.get("enforced", True):

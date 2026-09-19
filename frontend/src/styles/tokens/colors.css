@@ -1,0 +1,83 @@
+/* AngryRobot colour system.
+   Grounds and accents follow the published brand foundations; the grey ramp and
+   every status ink are derivatives authored here (the source defines grounds only). */
+:root{
+/* Grounds */
+--ar-black:#101110;         /* Terminal Black */
+--ar-paper:#F4F1EA;         /* Paper */
+--ar-white:#FFFFFF;
+/* Accents */
+--ar-orange:#E4571F;        /* Hazard Orange — the single action colour */
+--ar-yellow:#EBC13C;        /* Signal Yellow */
+--ar-sand:#D9C7A9;          /* Sand */
+--ar-green:#2E5B46;         /* Freight Green */
+--ar-blue:#12283F;          /* Deep Blue */
+/* Warm-neutral ramp — tuned to sit beside Paper, not pure grey */
+--ar-grey-900:#1A1B1A;
+--ar-grey-800:#2A2C2A;
+--ar-grey-700:#4A4C49;
+--ar-grey-600:#6B6D68;
+--ar-grey-500:#8C8E88;
+--ar-grey-400:#ADAFA8;
+--ar-grey-300:#C9CAC3;
+--ar-grey-200:#DFDFD8;
+--ar-grey-100:#EAE8E1;
+--ar-grey-50:#F7F5F0;
+
+/* ── Semantic aliases ───────────────────────────────────────── */
+--surface-page:var(--ar-grey-50);
+--surface-card:var(--ar-white);
+--surface-sunken:var(--ar-grey-100);
+--surface-inverse:var(--ar-black);
+--surface-deep:var(--ar-blue);
+--surface-accent:var(--ar-orange);
+--surface-signal:var(--ar-yellow);
+--surface-warm:var(--ar-sand);
+--surface-freight:var(--ar-green);
+
+--text-strong:var(--ar-black);
+--text-body:var(--ar-grey-900);
+--text-muted:var(--ar-grey-600);
+--text-subtle:var(--ar-grey-500);
+--text-accent:var(--ar-orange);
+--text-on-dark:var(--ar-paper);
+--text-on-dark-muted:rgba(244,241,234,0.64);
+/* Ink, not paper: white on Hazard Orange is only 3.6:1 and fails small text. */
+--text-on-accent:var(--ar-black);
+
+--border-subtle:var(--ar-grey-100);
+--border-default:var(--ar-grey-200);
+--border-strong:var(--ar-grey-300);
+--border-accent:var(--ar-orange);
+--border-on-dark:rgba(244,241,234,0.16);
+--hairline-inset:rgba(16,17,16,0.10);
+
+/* States — the accent darkens, never lightens, never shifts hue */
+--accent-hover:#C8471420;
+--accent-hover:#C84714;
+--accent-press:#AB3A0E;
+--accent-tint:rgba(228,87,31,0.08);
+--accent-tint-strong:rgba(228,87,31,0.16);
+--focus-ring:rgba(228,87,31,0.34);
+--ink-hover:#2A2C2A;
+--overlay-scrim:rgba(16,17,16,0.56);
+
+/* Status — grounds are palette tints, inks are darkened derivatives for 4.5:1 */
+--status-positive:#1F4732;
+--status-positive-soft:#DCE8E0;
+--status-caution:#6B4E0C;
+--status-caution-soft:#F7ECC9;
+--status-negative:#8F2F0F;
+--status-negative-soft:#F7DDD2;
+--status-info:#12283F;
+--status-info-soft:#DCE4EC;
+
+/* Data visualisation */
+--chart-1:var(--ar-orange);
+--chart-2:var(--ar-blue);
+--chart-3:var(--ar-green);
+--chart-4:var(--ar-sand);
+--chart-positive:var(--ar-green);
+--chart-negative:var(--ar-orange);
+--chart-axis:var(--ar-grey-200);
+}
