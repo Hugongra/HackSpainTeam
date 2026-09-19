@@ -4,13 +4,13 @@
 import React from "react";
 import {
   Activity, AlertTriangle, ArrowRight, BookOpen, Brain, Check, ChevronRight, Copy, Eye, FlaskConical,
-  Gauge, Hand, Octagon, Plug, RefreshCw, Search, Settings, ShieldAlert, Siren, Terminal, Wrench, X, Zap,
+  Gauge, Hand, Octagon, Phone, Plug, RefreshCw, Search, Settings, ShieldAlert, Siren, Terminal, Wrench, X, Zap,
 } from "lucide-react";
 
 const ICONS = {
   activity: Activity, "alert-triangle": AlertTriangle, "arrow-right": ArrowRight, "book-open": BookOpen,
   brain: Brain, check: Check, "chevron-right": ChevronRight, copy: Copy, eye: Eye, flask: FlaskConical,
-  gauge: Gauge, hand: Hand, octagon: Octagon, plug: Plug, refresh: RefreshCw, search: Search,
+  gauge: Gauge, hand: Hand, octagon: Octagon, phone: Phone, plug: Plug, refresh: RefreshCw, search: Search,
   settings: Settings, "shield-alert": ShieldAlert, siren: Siren, terminal: Terminal, wrench: Wrench, x: X, zap: Zap,
 };
 

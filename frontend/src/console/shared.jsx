@@ -32,7 +32,7 @@ export function useAsync(fn, deps) {
 // than threaded as a prop through every place a Signals chip is rendered.
 let catalogCache = null;
 let catalogInFlight = null;
-function useSignalCatalog() {
+export function useSignalCatalog() {
   const [cat, setCat] = React.useState(catalogCache);
   React.useEffect(() => {
     if (catalogCache) return;

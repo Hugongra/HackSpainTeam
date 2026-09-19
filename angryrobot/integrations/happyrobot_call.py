@@ -1,0 +1,63 @@
+"""
+El último trigger de una ronda: si AngryRobot ha matado (KILL) a algún agente, HappyRobot llama por
+teléfono a una persona para avisarla.
+
+Cómo: se lanza un run de un workflow de HappyRobot preparado para eso (un agente de voz saliente que
+lee el número y el resumen del payload), con la API v2 verificada en tools/hr_*.py:
+
+    POST https://platform.happyrobot.ai/api/v2/workflows/<HAPPYROBOT_ALERT_WORKFLOW_ID>/runs
+    {"payload": {"phone_number": "+34...", "summary": "...", ...}, "environment": "production"}
+
+Variables (en Render, nunca en el repo):
+    HAPPYROBOT_API_KEY             clave de la org de HappyRobot
+    HAPPYROBOT_ALERT_WORKFLOW_ID   el workflow de voz saliente que hace la llamada
+    ANGRYROBOT_ALERT_PHONE         número al que se llama (por defecto +34689257681)
+    HAPPYROBOT_ALERT_ENV           production | staging | development (por defecto production)
+
+Si falta la clave o el workflow, no se llama y el resultado lo dice ("not_configured"): la ronda
+nunca se rompe por culpa de la llamada. Que el teléfono suene de verdad depende de que ese workflow
+tenga telefonía saliente (número con SIP trunk) en HappyRobot: ver knowledge/12, "telephony blocker".
+"""
+import os
+import time
+
+import requests
+
+BASE = os.environ.get("HR_BASE", "https://platform.happyrobot.ai/api/v2").rstrip("/")
+DEFAULT_PHONE = "+34689257681"
+
+
+def alert_phone() -> str:
+    return os.environ.get("ANGRYROBOT_ALERT_PHONE") or DEFAULT_PHONE
+
+
+def configured() -> dict:
+    return {"api_key": bool(os.environ.get("HAPPYROBOT_API_KEY")),
+            "workflow": bool(os.environ.get("HAPPYROBOT_ALERT_WORKFLOW_ID")),
+            "phone": alert_phone()}
+
+
+def alert_call(summary: dict) -> dict:
+    """Lanza la llamada. Devuelve {status: sent|failed|not_configured, phone, detail, ...}."""
+    key = os.environ.get("HAPPYROBOT_API_KEY")
+    wf = os.environ.get("HAPPYROBOT_ALERT_WORKFLOW_ID")
+    phone = alert_phone()
+    out = {"phone": phone, "workflow_id": wf, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    if not key or not wf:
+        missing = [n for n, v in (("HAPPYROBOT_API_KEY", key), ("HAPPYROBOT_ALERT_WORKFLOW_ID", wf)) if not v]
+        return {**out, "status": "not_configured", "detail": f"Falta {', '.join(missing)} en el servicio: no se ha llamado."}
+    payload = {"phone_number": phone, "to_number": phone, **summary}
+    try:
+        r = requests.post(f"{BASE}/workflows/{wf}/runs", timeout=20,
+                          headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                          json={"payload": payload, "environment": os.environ.get("HAPPYROBOT_ALERT_ENV", "production")})
+    except requests.RequestException as exc:
+        return {**out, "status": "failed", "detail": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    try:
+        body = r.json()
+    except ValueError:
+        body = {"raw": r.text[:300]}
+    if r.status_code >= 400:
+        return {**out, "status": "failed", "detail": f"HTTP {r.status_code}: {str(body)[:300]}"}
+    run_id = body.get("run_id") or body.get("id") if isinstance(body, dict) else None
+    return {**out, "status": "sent", "run_id": run_id, "detail": "Run de HappyRobot lanzado.", "response": body}

@@ -7,6 +7,7 @@ system (tokens in `src/styles/tokens/`, primitives ported to `src/ds/`). Deploye
 | Route | What it is |
 |---|---|
 | `#/` | Landing: glass nav over the dark hero, flat editorial body |
+| `#/console/board` | **Board**: the flow (connectors → AngryRobot → levers). Left column: **Round** (Randomize agents: five random agents, one malicious at 50 %, a speed slider from step by step to full speed, and why each action got its IRA) and **Build** (drag connectors and levers) |
 | `#/console/workflows` | **Platform**: connected workflows, global pause / resume / kill, connect a new workflow |
 | `#/console/workflows/<id>` | One workflow: flow diagram, webhook + token + snippets, escalations, runs, policy editor, kill switch |
 | `#/console/escalations` | Human-in-the-loop inbox: approve, deny or take over held actions |

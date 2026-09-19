@@ -74,7 +74,7 @@ def init(config: dict) -> None:
             PRIMARY KEY (workflow_id, run_id))""")
         # Los perfiles de config.yaml son workflows desde el arranque (sobreviven a reinicios).
         for key, prof in (config.get("workflow_profiles") or {}).items():
-            if key == "default":
+            if key == "default" or prof.get("seed") is False:   # seed: false = perfil base, no workflow propio
                 continue
             exists = c.execute("SELECT 1 FROM workflows WHERE id = ?", (key,)).fetchone()
             if not exists:
@@ -284,6 +284,65 @@ class TurnIn(BaseModel):
     offered_tools: list[str] | None = None
 
 
+def process_turn(config: dict, wf: dict, body: TurnIn, use_judge: bool = True) -> dict:
+    """Un turno de un agente por el motor IRA: entradas, cada acción, directiva y escalaciones.
+    Lo usan la ingesta HTTP (POST /v1/ingest/<workflow>) y, en proceso, las rondas de la consola
+    (rounds.py). Devuelve además `audits_full` (el registro completo de cada acción) para quien
+    lo llame en proceso; el endpoint HTTP lo quita."""
+    if wf["status"] in ("killed", "paused"):
+        return {"run_id": body.run_id, "verdict": "KILL" if wf["status"] == "killed" else "DEFER",
+                "directive": get_directive(wf, body.run_id), "audits": [], "inputs": []}
+    profile = profile_for(config, wf)
+    observe = wf["mode"] == "observe"
+    state = session.get(body.run_id, wf["id"])
+    if state.killed and not observe:
+        return {"run_id": body.run_id, "verdict": "KILL", "directive": get_directive(wf, body.run_id), "audits": [], "inputs": []}
+
+    # DURANTE: entradas del turno
+    inputs = state.ingest(body.messages, profile) if body.messages else []
+    if body.input:
+        inputs.append(state.user_turn(body.input))
+    for tr in body.tool_results:
+        entry = next((h for h in reversed(state.history) if h.get("tool") == tr.get("name")), None)
+        inputs.append(state.tool_result(tr.get("name"), str(tr.get("content", "")) + ("" if tr.get("ok", True) else ' "error"'),
+                                        profile, entry))
+
+    # ANTES (o DESPUÉS si ya traen resultado): cada acción del turno
+    tools = [tc.name for tc in body.tool_calls]
+    audits = []
+    for tc in body.tool_calls:
+        a = engine.audit_action(config, wf["id"], profile, {"tool": tc.name, "args": tc.args, "text": body.output},
+                                state, reasoning=body.reasoning, reasoning_source="client" if body.reasoning else "preamble",
+                                offered_tools=body.offered_tools, phase="post" if tc.result is not None else "pre", record=False,
+                                use_judge=use_judge)
+        audits.append(a)
+    if body.output:
+        audits.append(engine.audit_action(config, wf["id"], profile, {"tool": "say", "text": body.output}, state,
+                                          reasoning=body.reasoning, reasoning_source="client" if body.reasoning else "none",
+                                          sibling_tools=tools, record=False, use_judge=use_judge))
+    result = after_turn(wf, body.run_id, audits, observe)
+    for a in audits:
+        a["enforcement"] = f"directiva: {result['directive']['action']}" + (" (observado)" if observe else "")
+        a["enforced"] = not observe
+        engine.finalize(a, profile, state)
+        if a["verdict"] != "ALLOW":
+            alerts.record("ingest", wf["id"], a, context=body.input)
+    # Resultados ya conocidos de tools de este mismo turno (auditoría a posteriori)
+    for tc in body.tool_calls:
+        if tc.result is not None:
+            entry = next((h for h in reversed(state.history) if h.get("tool") == tc.name), None)
+            state.tool_result(tc.name, tc.result + ("" if tc.ok is not False else ' "error"'), profile, entry)
+    # El agente dijo lo que dijo: queda en la conversación para los turnos siguientes
+    if body.output or body.tool_calls:
+        state.add_message({"role": "assistant", "content": body.output,
+                           "tool_calls": [{"id": f"t{i}", "function": {"name": tc.name, "arguments": json.dumps(tc.args)}}
+                                          for i, tc in enumerate(body.tool_calls)] or None}, profile)
+    return {"run_id": body.run_id, "workflow": wf["id"], "verdict": result["verdict"],
+            "ira_score": max((a["ira_score"] for a in audits), default=0.0), "directive": result["directive"],
+            "escalation_id": result["escalation_id"], "session": state.summary(), "inputs": inputs,
+            "audits": [engine.compact(a) for a in audits], "audits_full": audits}
+
+
 def build_router(config: dict) -> APIRouter:
     router = APIRouter()
     master = lambda: os.environ.get("ANGRYROBOT_SHARED_SECRET")  # noqa: E731
@@ -446,57 +505,9 @@ def build_router(config: dict) -> APIRouter:
                token: str | None = None):
         wf = wf_or_404(wf_id)
         agent_auth(wf, x_angryrobot_token, x_angryrobot_secret, authorization, token)
-        if wf["status"] in ("killed", "paused"):
-            return {"run_id": body.run_id, "verdict": "KILL" if wf["status"] == "killed" else "DEFER",
-                    "directive": get_directive(wf, body.run_id), "audits": [], "inputs": []}
-        profile = profile_for(config, wf)
-        observe = wf["mode"] == "observe"
-        state = session.get(body.run_id, wf_id)
-        if state.killed and not observe:
-            return {"run_id": body.run_id, "verdict": "KILL", "directive": get_directive(wf, body.run_id), "audits": [], "inputs": []}
-
-        # DURANTE: entradas del turno
-        inputs = state.ingest(body.messages, profile) if body.messages else []
-        if body.input:
-            inputs.append(state.user_turn(body.input))
-        for tr in body.tool_results:
-            entry = next((h for h in reversed(state.history) if h.get("tool") == tr.get("name")), None)
-            inputs.append(state.tool_result(tr.get("name"), str(tr.get("content", "")) + ("" if tr.get("ok", True) else ' "error"'),
-                                            profile, entry))
-
-        # ANTES (o DESPUÉS si ya traen resultado): cada acción del turno
-        tools = [tc.name for tc in body.tool_calls]
-        audits = []
-        for tc in body.tool_calls:
-            a = engine.audit_action(config, wf_id, profile, {"tool": tc.name, "args": tc.args, "text": body.output},
-                                    state, reasoning=body.reasoning, reasoning_source="client" if body.reasoning else "preamble",
-                                    offered_tools=body.offered_tools, phase="post" if tc.result is not None else "pre", record=False)
-            audits.append(a)
-        if body.output:
-            audits.append(engine.audit_action(config, wf_id, profile, {"tool": "say", "text": body.output}, state,
-                                              reasoning=body.reasoning, reasoning_source="client" if body.reasoning else "none",
-                                              sibling_tools=tools, record=False))
-        result = after_turn(wf, body.run_id, audits, observe)
-        for a in audits:
-            a["enforcement"] = f"directiva: {result['directive']['action']}" + (" (observado)" if observe else "")
-            a["enforced"] = not observe
-            engine.finalize(a, profile, state)
-            if a["verdict"] != "ALLOW":
-                alerts.record("ingest", wf_id, a, context=body.input)
-        # Resultados ya conocidos de tools de este mismo turno (auditoría a posteriori)
-        for tc in body.tool_calls:
-            if tc.result is not None:
-                entry = next((h for h in reversed(state.history) if h.get("tool") == tc.name), None)
-                state.tool_result(tc.name, tc.result + ("" if tc.ok is not False else ' "error"'), profile, entry)
-        # El agente dijo lo que dijo: queda en la conversación para los turnos siguientes
-        if body.output or body.tool_calls:
-            state.add_message({"role": "assistant", "content": body.output,
-                               "tool_calls": [{"id": f"t{i}", "function": {"name": tc.name, "arguments": json.dumps(tc.args)}}
-                                              for i, tc in enumerate(body.tool_calls)] or None}, profile)
-        return {"run_id": body.run_id, "workflow": wf_id, "verdict": result["verdict"],
-                "ira_score": max((a["ira_score"] for a in audits), default=0.0), "directive": result["directive"],
-                "escalation_id": result["escalation_id"], "session": state.summary(), "inputs": inputs,
-                "audits": [engine.compact(a) for a in audits]}
+        result = process_turn(config, wf, body)
+        result.pop("audits_full", None)
+        return result
 
     @router.get("/v1/ingest/{wf_id}/runs/{run_id}/directive")
     def directive(wf_id: str, run_id: str, x_angryrobot_token: str | None = Header(default=None),

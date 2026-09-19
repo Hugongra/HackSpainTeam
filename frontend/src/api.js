@@ -56,4 +56,14 @@ export const api = {
   hrConnect: (body) => call("/v1/providers/happyrobot/connect", { method: "POST", body }),
   providerLink: (id) => call(`/v1/providers/links/${encodeURIComponent(id)}`),
   resolve: (id, decision, note = "") => call(`/v1/escalations/${encodeURIComponent(id)}/resolve`, { method: "POST", body: { decision, note } }),
+  // Rounds: random agents through the 5-seat workflow, one malicious at 50 %, step by step (angryrobot/rounds.py)
+  roundConfig: () => call("/v1/rounds/config"),
+  startRound: (body) => call("/v1/rounds", { method: "POST", body }),
+  round: (id) => call(`/v1/rounds/${encodeURIComponent(id)}`),
+  rounds: () => call("/v1/rounds"),
+  roundNext: (id) => call(`/v1/rounds/${encodeURIComponent(id)}/next`, { method: "POST" }),
+  roundPace: (id, pace, delay) => call(`/v1/rounds/${encodeURIComponent(id)}/pace`, { method: "POST", body: { pace, delay } }),
+  roundStop: (id) => call(`/v1/rounds/${encodeURIComponent(id)}/stop`, { method: "POST" }),
+  roundReveal: (id) => call(`/v1/rounds/${encodeURIComponent(id)}/reveal`, { method: "POST" }),
+  roundStats: () => call("/v1/rounds/stats"),
 };

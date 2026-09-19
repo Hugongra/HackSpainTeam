@@ -14,6 +14,7 @@ import { api } from "../api";
 import { ErrorNote, Signals, useAsync } from "./shared";
 import { CopyField, Escalations, StatusBadge, WorkflowDetail } from "./Platform";
 import { Overview, Runs, TryAction, useData } from "./Console";
+import RoundPanel from "./Round";
 
 /* ---------------------------------------------------------------- catalog */
 // One connector per provider. Only HappyRobot has an adapter today (providers.py); the rest are announced.
@@ -40,6 +41,7 @@ export const OUTPUTS = {
   escalate: { label: "Escalate", icon: "hand", verdicts: ["DEFER"], tone: "sand" },
   kill: { label: "Kill", icon: "octagon", verdicts: ["KILL"], tone: "ink" },
   notify: { label: "Notify", icon: "siren", verdicts: ["DEFER", "KILL"], tone: "paper" },
+  call: { label: "HappyRobot call", icon: "phone", verdicts: ["KILL"], tone: "freight" },   // rounds: the last trigger, on KILL
 };
 const VERDICTS = ["ALLOW", "WARN", "DEFER", "KILL"];
 const STORE = "ar_board_v3";
@@ -104,9 +106,9 @@ function useTraffic(live, refreshKey) {
 /* ---------------------------------------------------------------- nodes */
 const HANDLE = { width: 10, height: 10, borderRadius: 0, background: "var(--ar-paper)", border: "1.5px solid var(--ar-black)" };
 
-function Shell({ selected, tone = "paper", children, badge }) {
+function Shell({ selected, tone = "paper", children, badge, extra = "" }) {
   return (
-    <div className={`bn bn--${tone} ${selected ? "is-selected" : ""}`}>
+    <div className={`bn bn--${tone} ${selected ? "is-selected" : ""} ${extra}`}>
       {badge}
       {children}
     </div>
@@ -114,10 +116,18 @@ function Shell({ selected, tone = "paper", children, badge }) {
 }
 function InputNode({ data, selected }) {
   const cat = INPUTS[data.kind] || INPUTS.webhook;
+  const seat = data.seat;   // this connector is a seat of the running round (Round tab)
   return (
-    <Shell selected={selected}>
+    <Shell selected={selected} extra={seat ? `is-seat is-seat-${seat.status}${seat.malicious ? " is-malicious" : ""}` : ""}>
       <div className="bn-head"><ProviderLogo id={data.kind} size={18} /><span className="ar-mono muted">{cat.label.toUpperCase()}{data.external_slug ? ` · ${data.external_slug}` : ""}</span></div>
       <strong className="bn-title">{data.label || cat.label}</strong>
+      {seat && (
+        <div className="bn-seat">
+          <span><b>{seat.agent}</b> · {seat.status === "active" ? "on the call" : seat.status}</span>
+          {seat.worst ? <Verdict v={seat.worst} /> : null}
+          {seat.malicious ? <span className="chip chip--malicious">{seat.malicious}</span> : null}
+        </div>
+      )}
       {data.workflow_id && <span className="bn-sub">policy {data.profile} · {data.mode}</span>}
       <div className="bn-foot">
         {data.workflow_id ? <StatusBadge status={data.status || "live"} /> : <Badge tone="sand">Not registered</Badge>}
@@ -148,6 +158,7 @@ function OutputNode({ data, selected }) {
       <Handle type="target" position={Position.Left} style={HANDLE} />
       <div className="bn-head"><Icon name={cat.icon} size={16} /><span className="ar-mono" style={{ opacity: .7 }}>LEVER</span></div>
       <strong className="bn-title">{cat.label}</strong>
+      {data.call && <span className="bn-sub" style={{ opacity: .9 }}>{data.call}</span>}
       {data.count != null && <div className="bn-foot"><span className="ar-mono" style={{ opacity: .8 }}>{data.count} ↓</span>{data.waiting ? <Badge tone="accent" dot>{data.waiting} waiting</Badge> : null}</div>}
     </Shell>
   );
@@ -432,6 +443,20 @@ function HappyRobotDialog({ open, onClose, live, profiles, onConnected }) {
   );
 }
 
+/* ---------------------------------------------------------------- the round's own board
+   Round tab: the five seats of the round in order -> AngryRobot -> the levers, including the HappyRobot
+   call (the last trigger, on KILL). Kept apart from the Build board, which is stored and auto-places every
+   workflow of the service, so neither view clutters the other. */
+function roundLayout(seats) {
+  const inputs = seats.map((x, i) => ({ id: `in-${x.workflow_id}`, type: "connector", position: { x: 0, y: i * 175 },
+    data: { kind: INPUTS[x.source] ? x.source : "webhook", label: x.role, profile: "desk", mode: "enforce", workflow_id: x.workflow_id, status: "live" } }));
+  const guard = { id: GUARD_ID, type: "guard", position: { x: 420, y: 330 }, data: { profile: "desk" }, deletable: false };
+  const outs = ["continue", "warn", "escalate", "kill", "call"].map((k, i) => ({ id: `out-${k}`, type: "lever", position: { x: 840, y: i * 165 }, data: { kind: k } }));
+  return { nodes: [...inputs, guard, ...outs],
+           edges: [...inputs.map((n) => ({ id: `e-${n.id}`, source: n.id, target: GUARD_ID, type: "traffic", data: { verdicts: [] } })),
+                   ...outs.map((n) => ({ id: `e-${n.id}`, source: GUARD_ID, target: n.id, type: "traffic", data: { verdicts: OUTPUTS[n.data.kind].verdicts } }))] };
+}
+
 /* ---------------------------------------------------------------- the board */
 function BoardInner({ live, refreshKey, initial }) {
   const flow = useReactFlow();
@@ -439,7 +464,18 @@ function BoardInner({ live, refreshKey, initial }) {
   const [health] = useAsync(() => api.health().catch(() => null), [live]);
   const [traffic] = useTraffic(live, refreshKey);
   const data = useData(live, refreshKey);
-  const [graph, setGraph] = React.useState(() => loadGraph());
+  const [buildGraph, setBuildGraph] = React.useState(() => loadGraph());
+  const [roundGraph, setRoundGraph] = React.useState(null);
+  const [leftTab, setLeftTab] = React.useState(() => { try { return localStorage.getItem("ar_left_tab") || "round"; } catch { return "round"; } });
+  React.useEffect(() => { try { localStorage.setItem("ar_left_tab", leftTab); } catch { /* blocked */ } }, [leftTab]);
+  const [round, setRound] = React.useState(null);
+  const inRound = leftTab === "round" && Boolean(roundGraph);
+  const graph = inRound ? roundGraph : buildGraph;
+  const setGraph = inRound ? setRoundGraph : setBuildGraph;
+  React.useEffect(() => {
+    if (round?.seats) setRoundGraph((g) => (g && g.roundId === round.id ? g : { ...roundLayout(round.seats), roundId: round.id }));
+  }, [round?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  React.useEffect(() => { const t = setTimeout(() => flow.fitView({ padding: 0.15, duration: 250 }), 80); return () => clearTimeout(t); }, [inRound, round?.id, flow]);
   const graphReady = Boolean(graph);
   const ready = useNodesInitialized();
   const canvasRef = React.useRef(null);
@@ -467,12 +503,12 @@ function BoardInner({ live, refreshKey, initial }) {
     return { nodes: [...g.nodes, ...nodes], edges: [...g.edges, ...edges] };
   });
   // Workflows that exist on the service but not on the board (created elsewhere, or after a sync) get placed automatically.
-  React.useEffect(() => { if (graph && wfs.data?.workflows?.length) placeWorkflows(wfs.data.workflows); }, [graph ? 1 : 0, wfs.data]); // eslint-disable-line
+  React.useEffect(() => { if (!inRound && graph && wfs.data?.workflows?.length) placeWorkflows(wfs.data.workflows); }, [graph ? 1 : 0, wfs.data, inRound]); // eslint-disable-line
   const controlAll = async (action) => { setBusyAll(true); setAllErr(null); try { await api.controlAll(action); } catch (x) { setAllErr(x); } finally { setBusyAll(false); } };
 
   // First visit: seed the board from the connected workflows.
-  React.useEffect(() => { if (!graph && wfs.data) setGraph(seedGraph(wfs.data.workflows || [])); }, [graph, wfs.data]);
-  React.useEffect(() => { if (graph) saveGraph(graph); }, [graph]);
+  React.useEffect(() => { if (!buildGraph && wfs.data) setBuildGraph(seedGraph(wfs.data.workflows || [])); }, [buildGraph, wfs.data]);
+  React.useEffect(() => { if (buildGraph) saveGraph(buildGraph); }, [buildGraph]);
 
   const events = React.useMemo(() => eventsFromRuns(traffic.data || []), [traffic.data]);
   const profiles = wfs.data?.base_profiles || ["default"];
@@ -484,7 +520,10 @@ function BoardInner({ live, refreshKey, initial }) {
     if (n.type === "connector") {
       const w = wfById[n.data.workflow_id];
       const count = events.filter((e) => e.dir === "up" && e.kind === "user_turn" && (e.profile === n.data.profile || e.profile === n.data.workflow_id)).length;
-      return { ...n, data: { ...n.data, status: w?.status || n.data.status, count } };
+      const seat = round?.seats?.find((x) => x.workflow_id === n.data.workflow_id);
+      const seatData = seat ? { agent: seat.agent, status: seat.status, worst: seat.worst,
+                                malicious: seat.malicious && seat.malicious !== "hidden" ? seat.malicious.label : null } : null;
+      return { ...n, data: { ...n.data, status: w?.status || n.data.status, count, seat: seatData } };
     }
     if (n.type === "guard") {
       const counts = {}; events.filter((e) => e.dir === "down").forEach((e) => { counts[e.verdict] = (counts[e.verdict] || 0) + 1; });
@@ -492,8 +531,10 @@ function BoardInner({ live, refreshKey, initial }) {
     }
     const verdicts = (graph.edges.find((e) => e.target === n.id)?.data?.verdicts) || [];
     const count = events.filter((e) => e.dir === "down" && verdicts.includes(e.verdict)).length;
-    return { ...n, data: { ...n.data, count, waiting: n.data.kind === "escalate" ? escOpen : 0 } };
-  }), [graph, events, wfById, health.data, escOpen]);
+    const callEv = n.data.kind === "call" ? [...(round?.events || [])].reverse().find((e) => e.kind === "call") : null;
+    return { ...n, data: { ...n.data, count, waiting: n.data.kind === "escalate" ? escOpen : 0,
+                           call: n.data.kind === "call" ? (callEv ? `${callEv.status} · ${callEv.call?.phone || ""}` : "waits for a KILL") : undefined } };
+  }), [graph, events, wfById, health.data, escOpen, round]);
   const edges = React.useMemo(() => (graph?.edges || []).map((e) => {
     const src = graph.nodes.find((n) => n.id === e.source);
     const count = src?.type === "guard"
@@ -566,8 +607,15 @@ function BoardInner({ live, refreshKey, initial }) {
 
   if (!graph) return <p className="ar-small muted" style={{ padding: 24 }}>Laying out the board…</p>;
   return (
-    <div className="board">
-      <Palette hasGuard={graph.nodes.some((n) => n.type === "guard")} providers={provs.data} onProvider={setProvider} />
+    <div className={`board ${leftTab === "round" ? "is-round" : ""}`}>
+      <div className="board-left">
+        <div className="left-tabs" role="tablist">
+          <button role="tab" aria-selected={leftTab === "round"} className={leftTab === "round" ? "is-on" : ""} onClick={() => setLeftTab("round")}>Round</button>
+          <button role="tab" aria-selected={leftTab === "build"} className={leftTab === "build" ? "is-on" : ""} onClick={() => setLeftTab("build")}>Build</button>
+        </div>
+        {leftTab === "round" ? <RoundPanel live={live} onRound={setRound} />
+          : <Palette hasGuard={graph.nodes.some((n) => n.type === "guard")} providers={provs.data} onProvider={setProvider} />}
+      </div>
       <div className="board-main">
         <div className="board-canvas" ref={canvasRef} onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>
           <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
@@ -595,7 +643,7 @@ function BoardInner({ live, refreshKey, initial }) {
             ) : (
               <Button size="sm" variant="secondary" onClick={() => { window.location.hash = "#/console/settings"; }} iconLeft={<Icon name="plug" size={14} />}>Connect the service</Button>
             )}
-            <Button size="sm" variant="ghost" onClick={() => { localStorage.removeItem(STORE); setGraph(seedGraph(wfs.data?.workflows || [])); }}>Reset layout</Button>
+            <Button size="sm" variant="ghost" onClick={() => { if (inRound) { setRoundGraph({ ...roundLayout(round.seats), roundId: round.id }); return; } localStorage.removeItem(STORE); setBuildGraph(seedGraph(wfs.data?.workflows || [])); }}>Reset layout</Button>
           </div>
           {allErr && <div className="board-issues" style={{ top: 64 }}><Icon name="alert-triangle" size={16} /><span>{String(allErr.message || allErr)}</span></div>}
         </div>
