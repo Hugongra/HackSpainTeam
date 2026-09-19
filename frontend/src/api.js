@@ -42,4 +42,13 @@ export const api = {
   alerts: (limit = 100) => call(`/alerts?limit=${limit}`),
   audit: (body) => call("/v1/audit", { method: "POST", body }),
   feedback: (body) => call("/v1/feedback", { method: "POST", body }),
+  // Platform: connected workflows, escalations, kill switch
+  workflows: () => call("/v1/workflows"),
+  workflow: (id) => call(`/v1/workflows/${encodeURIComponent(id)}`),
+  createWorkflow: (body) => call("/v1/workflows", { method: "POST", body }),
+  updateWorkflow: (id, body) => call(`/v1/workflows/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  control: (id, action, note = "") => call(`/v1/workflows/${encodeURIComponent(id)}/control`, { method: "POST", body: { action, note } }),
+  controlAll: (action, note = "") => call("/v1/workflows/control-all", { method: "POST", body: { action, note } }),
+  escalations: (status) => call(`/v1/escalations${status ? `?status=${status}` : ""}`),
+  resolve: (id, decision, note = "") => call(`/v1/escalations/${encodeURIComponent(id)}/resolve`, { method: "POST", body: { decision, note } }),
 };

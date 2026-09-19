@@ -36,6 +36,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 import alerts
 import engine
+import platform_api
 import reasoning as rsn
 import session
 
@@ -127,14 +128,21 @@ def build_router(config: dict) -> APIRouter:
 
     def profile_of(name: str) -> dict:
         profiles = config.get("workflow_profiles", {})
+        wf = platform_api.get_workflow(name)
+        if wf:   # workflow de la plataforma: su política sobre su perfil base
+            return platform_api.profile_for(config, wf)
         if name not in profiles:
-            raise HTTPException(status_code=404, detail=f"perfil '{name}' no existe en config.yaml (workflow_profiles)")
+            raise HTTPException(status_code=404, detail=f"perfil o workflow '{name}' no existe")
         return {**(profiles.get("default") or {}), **profiles[name]} if name != "default" else profiles[name]
 
-    def check_auth(authorization: str | None, x_secret: str | None):
+    def check_auth(authorization: str | None, x_secret: str | None, pname: str | None = None):
         secret = os.environ.get("ANGRYROBOT_SHARED_SECRET")
-        if secret and authorization != f"Bearer {secret}" and x_secret != secret:
-            raise HTTPException(status_code=401, detail="Bearer / X-AngryRobot-Secret incorrecto")
+        if not secret or authorization == f"Bearer {secret}" or x_secret == secret:
+            return
+        wf = platform_api.get_workflow(pname) if pname else None
+        if wf and authorization == f"Bearer {platform_api.token_for(wf)}":
+            return   # el agente puede usar el token de su propio workflow
+        raise HTTPException(status_code=401, detail="Bearer / X-AngryRobot-Secret incorrecto")
 
     def audit_reply(pname, profile, message, reasoning, source, state, offered, use_judge_speech, phase="pre"):
         acts = actions_of(message)
@@ -182,8 +190,9 @@ def build_router(config: dict) -> APIRouter:
                    x_angryrobot_secret: str | None = Header(default=None),
                    x_angryrobot_run: str | None = Header(default=None),
                    x_angryrobot_mode: str | None = Header(default=None)):
-        check_auth(authorization, x_angryrobot_secret)
+        check_auth(authorization, x_angryrobot_secret, pname)
         profile = profile_of(pname)
+        wf = platform_api.get_workflow(pname)
         st = {**base_inline, **(profile.get("inline") or {})}
         body = await request.json()
         started = time.monotonic()
@@ -204,6 +213,11 @@ def build_router(config: dict) -> APIRouter:
 
         # DURANTE: entradas nuevas (interlocutor, resultados de tools)
         inputs = state.ingest(messages, profile)
+        if wf and wf["status"] in ("killed", "paused"):   # orquestación: kill switch / pausa del workflow
+            verdict = "KILL" if wf["status"] == "killed" else "DEFER"
+            reply = enforced(verdict, st, offered)
+            return _respond(body, reply, up, {"run_id": run_id, "verdict": verdict,
+                                              "enforcement": f"workflow {wf['status']} desde la plataforma"})
         if state.killed and not observe:
             reply = enforced("KILL", st, offered)
             return _respond(body, reply, up, {"run_id": run_id, "verdict": "KILL", "enforcement": "run bloqueado tras KILL"})
@@ -267,6 +281,8 @@ def build_router(config: dict) -> APIRouter:
             if a["verdict"] != "ALLOW":
                 alerts.record("proxy", pname, a, context=last_user)
         state.mark_served(reply, worst)
+        if wf:   # escalaciones, directiva y aviso al workflow (igual que la ingesta por webhook)
+            platform_api.after_turn(wf, run_id, [a for a in audits if a.get("phase") != "resample"], observe)
 
         extra = {"run_id": run_id, "verdict": worst, "ira_score": max((a["ira_score"] for a in audits), default=0.0),
                  "enforcement": enforcement, "reasoning_source": source, "session": state.summary(),

@@ -27,7 +27,10 @@ function App() {
     }
     document.title = isConsole ? "AngryRobot console" : "AngryRobot";
   }, [hash, isConsole]);
-  if (isConsole) return <Console view={hash.split("/")[2] || "overview"} />;
+  if (isConsole) {
+    const [, , view, param] = hash.split("/");
+    return <Console view={view || "workflows"} param={param ? decodeURIComponent(param) : ""} />;
+  }
   return <Landing />;
 }
 

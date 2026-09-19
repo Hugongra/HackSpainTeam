@@ -113,7 +113,7 @@ export function Card({ ground = "paper", interactive = false, eyebrow, marker = 
       {(eyebrow || marker) && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20 }}>
           <span className="ar-mono" style={{ color: dark ? "var(--text-on-dark-muted)" : "var(--text-muted)" }}>{eyebrow}</span>
-          {marker && <span style={{ width: 8, height: 8, background: "var(--ar-orange)", flex: "none" }} />}
+          {marker && <span style={{ width: 8, height: 8, background: "var(--ar-accent)", flex: "none" }} />}
         </div>
       )}
       {children}
@@ -127,7 +127,9 @@ const BADGES = {
   caution: { background: "var(--status-caution-soft)", color: "var(--status-caution)" },
   negative: { background: "var(--status-negative-soft)", color: "var(--status-negative)" },
   info: { background: "var(--status-info-soft)", color: "var(--status-info)" },
-  accent: { background: "var(--ar-orange)", color: "var(--text-on-accent)" },
+  accent: { background: "var(--ar-accent)", color: "var(--text-on-accent)" },
+  ink: { background: "var(--ar-black)", color: "var(--ar-paper)" },
+  sand: { background: "var(--ar-sand)", color: "var(--ar-black)" },
   onDark: { background: "rgba(244,241,234,0.14)", color: "var(--ar-paper)" },
 };
 
@@ -151,7 +153,7 @@ export function Tag({ children, style, title }) {
   );
 }
 
-/** Underline tabs. The active rule is Hazard Orange and 2px — the only moving part. */
+/** Underline tabs. The active rule is the accent (Freight Green) and 2px — the only moving part. */
 export function Tabs({ items = [], value, onChange, style }) {
   return (
     <div role="tablist" className="ar-tabs" style={style}>
@@ -168,7 +170,7 @@ export function Tabs({ items = [], value, onChange, style }) {
   );
 }
 
-const TOASTS = { neutral: "var(--ar-grey-500)", positive: "var(--ar-green)", caution: "var(--ar-yellow)", negative: "var(--ar-orange)" };
+const TOASTS = { neutral: "var(--ar-grey-500)", positive: "var(--ar-green)", caution: "var(--ar-yellow)", negative: "var(--ar-accent)" };
 
 /** Transient confirmation. Ink panel with a 3px status bar on its leading edge. */
 export function Toast({ tone = "neutral", title, onDismiss, children }) {
@@ -184,7 +186,7 @@ export function Toast({ tone = "neutral", title, onDismiss, children }) {
   );
 }
 
-/** Square text field. Focus is an orange border plus a 3px tinted ring. */
+/** Square text field. Focus is an accent border plus a 3px tinted ring. */
 export function Input({ label, hint, id, style, textarea = false, ...rest }) {
   const auto = React.useId();
   const fid = id || auto;
@@ -253,7 +255,7 @@ export function Dialog({ open, onClose, title, eyebrow, footer, width = 560, chi
 }
 
 /* ---- AngryRobot domain helpers ---------------------------------------- */
-export const VERDICT_TONE = { ALLOW: "positive", WARN: "caution", DEFER: "negative", KILL: "accent" };
+export const VERDICT_TONE = { ALLOW: "positive", WARN: "caution", DEFER: "negative", KILL: "ink" };
 export const VERDICT_LABEL = { ALLOW: "Allowed", WARN: "Warned", DEFER: "Held", KILL: "Stopped" };
 
 export function Verdict({ v }) {

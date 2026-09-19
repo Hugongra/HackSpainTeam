@@ -3,6 +3,7 @@
 import React from "react";
 import { Button, Card, GlassPanel, Icon, Logo, Verdict } from "../ds";
 import { api } from "../api";
+import { FlowDiagram } from "../console/Platform";
 
 const go = (hash) => () => { window.location.hash = hash; };
 
@@ -15,11 +16,12 @@ function Nav() {
           <a href="#how">How it audits</a>
           <a href="#ira">The IRA index</a>
           <a href="#proof">Rogue lab</a>
+          <a href="#platform">Platform</a>
           <a href="#plug">Plug it in</a>
         </nav>
         <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
           <Button variant="onDark" size="sm" onClick={go("#/console/signals")}>Signals</Button>
-          <Button size="sm" onClick={go("#/console")}>Open console</Button>
+          <Button size="sm" variant="inverse" onClick={go("#/console")}>Open console</Button>
         </div>
       </GlassPanel>
     </div>
@@ -30,7 +32,7 @@ function Hero({ health }) {
   return (
     <section className="hero">
       <div className="wrap hero-inner">
-        <span className="ar-overline" style={{ color: "var(--text-on-dark-muted)" }}>01 / The layer</span>
+        <span className="ar-overline" style={{ color: "var(--text-on-dark-muted)" }}>The layer</span>
         <h1 className="ar-display" style={{ marginTop: 28, maxWidth: "13ch" }}>The anger management layer for your agents</h1>
         <p className="ar-lead" style={{ marginTop: 30, color: "var(--text-on-dark-muted)", maxWidth: "56ch" }}>
           AngryRobot sits above every agent in a workflow and audits each action before it runs: every sentence,
@@ -38,7 +40,7 @@ function Hero({ health }) {
           held, corrected, or stopped.
         </p>
         <div style={{ display: "flex", gap: 12, marginTop: 36, flexWrap: "wrap" }}>
-          <Button size="lg" onClick={go("#/console")} iconRight={<Icon name="arrow-right" size={18} />}>Open the console</Button>
+          <Button size="lg" variant="inverse" onClick={go("#/console")} iconRight={<Icon name="arrow-right" size={18} />}>Open the console</Button>
           <Button size="lg" variant="onDark" onClick={go("#plug")}>Plug in an agent</Button>
         </div>
         <div className="stat-row">
@@ -74,13 +76,13 @@ function HowItAudits() {
   return (
     <section id="how" className="wrap section">
       <div className="eyebrow-row">
-        <span className="ar-overline muted">02 / How it audits</span>
+        <span className="ar-overline muted">How it audits</span>
         <h2 className="ar-h2" style={{ maxWidth: "20ch" }}>One audit per action, on three clocks</h2>
       </div>
       <div className="grid-3">
         {items.map(([icon, title, body], i) => (
-          <Card key={title} eyebrow={`${String(i + 1).padStart(2, "0")} / ${title.toUpperCase()}`} marker={i === 1}>
-            <span style={{ color: "var(--ar-orange)", display: "inline-flex", marginBottom: 18 }}><Icon name={icon} size={26} /></span>
+          <Card key={title} eyebrow={title.toUpperCase()} marker={i === 1}>
+            <span style={{ color: "var(--ar-accent)", display: "inline-flex", marginBottom: 18 }}><Icon name={icon} size={26} /></span>
             <h3 className="ar-h4">{title} the action</h3>
             <p className="ar-small muted" style={{ marginTop: 10 }}>{body}</p>
           </Card>
@@ -104,7 +106,7 @@ function IraIndex() {
     <section id="ira" style={{ background: "var(--surface-sunken)" }}>
       <div className="wrap section">
         <div className="eyebrow-row">
-          <span className="ar-overline muted">03 / The IRA index</span>
+          <span className="ar-overline muted">The IRA index</span>
           <h2 className="ar-h2" style={{ maxWidth: "22ch" }}>Impact times suspicion, not an average</h2>
           <p className="ar-lead muted">
             Impact asks how bad the action is if it is wrong. Suspicion asks how likely it is to be wrong, combined as
@@ -149,7 +151,7 @@ function Proof() {
     <section id="proof" className="band-dark">
       <div className="wrap section split" style={{ alignItems: "center" }}>
         <div>
-          <span className="ar-overline" style={{ color: "var(--text-on-dark-muted)" }}>04 / Rogue lab</span>
+          <span className="ar-overline" style={{ color: "var(--text-on-dark-muted)" }}>Rogue lab</span>
           <p className="ar-h2" style={{ color: "var(--ar-paper)", marginTop: 24 }}>
             “We need to send an SMS with internal floor rate and best competing bid.”
           </p>
@@ -162,7 +164,7 @@ function Proof() {
         <div style={{ background: "var(--ar-paper)", color: "var(--ar-black)", padding: 28 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
             <span className="ar-mono muted">GUARD MODE · 9 AGENTS</span>
-            <span style={{ width: 8, height: 8, background: "var(--ar-orange)" }} />
+            <span style={{ width: 8, height: 8, background: "var(--ar-accent)" }} />
           </div>
           {rows.map(([name, what, v]) => (
             <div key={name} className="kv">
@@ -199,7 +201,7 @@ agent_llm.chat.completions.create(
   return (
     <section id="plug" className="wrap section">
       <div className="eyebrow-row">
-        <span className="ar-overline muted">05 / Plug it in</span>
+        <span className="ar-overline muted">Plug it in</span>
         <h2 className="ar-h2" style={{ maxWidth: "20ch" }}>Change one URL. Keep your agent.</h2>
       </div>
       <div className="split">
@@ -207,11 +209,39 @@ agent_llm.chat.completions.create(
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {ways.map(([icon, title, body]) => (
             <div key={title} style={{ display: "flex", gap: 16, paddingBottom: 16, borderBottom: "1px solid var(--border-subtle)" }}>
-              <span style={{ color: "var(--ar-orange)" }}><Icon name={icon} size={22} /></span>
+              <span style={{ color: "var(--ar-accent)" }}><Icon name={icon} size={22} /></span>
               <div><h3 className="ar-h5">{title}</h3><p className="ar-small muted" style={{ marginTop: 6 }}>{body}</p></div>
             </div>
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function Platform() {
+  const points = [
+    ["plug", "Connect any workflow", "HappyRobot, LangChain, n8n or your own code. Each workflow gets its own policy and token, and posts every turn to one webhook."],
+    ["hand", "Escalations, not surprises", "Held actions wait in one inbox. Approve, deny or take over; the agent reads the decision as its next directive."],
+    ["octagon", "One kill switch", "Pause, resume or stop a workflow, or every workflow at once. Agents obey on their next turn."],
+  ];
+  return (
+    <section id="platform" style={{ background: "var(--surface-sunken)" }}>
+      <div className="wrap section">
+        <div className="eyebrow-row">
+          <span className="ar-overline muted">The platform</span>
+          <h2 className="ar-h2" style={{ maxWidth: "22ch" }}>Orchestrate every agent from one place</h2>
+        </div>
+        <FlowDiagram />
+        <div className="grid-3" style={{ marginTop: "var(--card-gap)" }}>
+          {points.map(([icon, title, body]) => (
+            <Card key={title} eyebrow={title.toUpperCase()}>
+              <span style={{ color: "var(--ar-accent)", display: "inline-flex", marginBottom: 14 }}><Icon name={icon} size={24} /></span>
+              <p className="ar-small muted">{body}</p>
+            </Card>
+          ))}
+        </div>
+        <Button style={{ marginTop: 28 }} onClick={go("#/console/workflows")} iconRight={<Icon name="arrow-right" size={18} />}>Open the workflows</Button>
       </div>
     </section>
   );

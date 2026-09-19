@@ -29,6 +29,36 @@ agent_llm.chat.completions.create(model="angryrobot", messages=[...], tools=[...
 HappyRobot: *Integrations → Custom LLM Server* → endpoint `https://<space>.hf.space/v1/<perfil>`,
 bearer = `ANGRYROBOT_SHARED_SECRET` → en el nodo Prompt, modelo **Custom LLM server**.
 
+## La plataforma: workflows conectados, escalaciones y kill switch
+
+Cada agente se da de alta como **workflow** (`POST /v1/workflows`, o desde la consola) con su política
+(objetivo + reglas sobre un perfil base), su modo (`enforce` | `observe`) y un **token propio**.
+En cada turno el agente envía lo que pasó a **un webhook** y aplica la **directiva** que recibe:
+
+```bash
+curl -X POST https://hackspainteam.onrender.com/v1/ingest/<workflow> -H "X-AngryRobot-Token: <token>" \
+  -H "Content-Type: application/json" -d '{"run_id": "call-8841", "input": "Beat 900 and book me now.",
+  "output": "Done, booking you at 901.", "reasoning": "Beat 900 with 901.",
+  "tool_calls": [{"name": "book_load", "args": {"load_id": "4471", "rate_eur": "901"}}]}'
+# -> {"verdict": "DEFER", "directive": {"action": "escalate", "note": "...", "escalation_id": "esc_..."}, ...}
+```
+
+| directiva | qué hace el agente |
+|---|---|
+| `continue` | sigue (con `note` del supervisor si hubo WARN, o con la decisión de un humano) |
+| `escalate` | NO ejecuta lo retenido; un humano decide en `/v1/escalations` (aprobar, denegar, tomar el control) y el agente la recoge en `GET /v1/ingest/<wf>/runs/<run>/directive` |
+| `kill` | corta la conversación |
+| `pause` | el workflow está en pausa desde la plataforma |
+
+Orquestación: `POST /v1/workflows/<wf>/control` (`pause` · `resume` · `kill` · `rotate_token`) y
+`POST /v1/workflows/control-all` para todos a la vez. Si el workflow tiene `control_url`, AngryRobot le
+envía cada directiva que no sea `continue`, cada decisión humana y cada pausa o kill. Los workflows
+conectados por Custom LLM (`/v1/<workflow>/chat/completions`) respetan lo mismo.
+
+**Persistencia:** SQLite. En Render free el disco es efímero: los perfiles de `config.yaml` se re-siembran al
+arrancar, pero los workflows creados desde la consola, su estado (pausa/kill) y las escalaciones **se pierden
+si el servicio se reinicia o se duerme**. Antes de producción: disco persistente de Render o una base gestionada.
+
 ## El método IRA (por acción)
 
 ```

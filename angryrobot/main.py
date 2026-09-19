@@ -30,6 +30,7 @@ import alerts  # noqa: E402
 import auditor  # noqa: E402
 import catalog  # noqa: E402
 import engine  # noqa: E402
+import platform_api  # noqa: E402
 import session  # noqa: E402
 from proxy import build_router, upstream_of  # noqa: E402
 from storage import DB_PATH, get_case, init_db, label_case  # noqa: E402
@@ -47,11 +48,14 @@ app.add_middleware(
     allow_origins=[o.strip() for o in os.environ.get(
         "ANGRYROBOT_CORS_ORIGINS",
         "https://hugongra.github.io,http://localhost:5173,http://localhost:4173").split(",") if o.strip()],
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-AngryRobot-Secret", "X-AngryRobot-Run",
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-AngryRobot-Secret", "X-AngryRobot-Token", "X-AngryRobot-Run",
                    "X-AngryRobot-Mode", "X-AngryRobot-Detail"],
     expose_headers=["X-AngryRobot-Verdict", "X-AngryRobot-IRA", "X-AngryRobot-Run"],
 )
+# Plataforma: workflows conectados, ingesta por turno, escalaciones, kill switch (platform_api.py).
+platform_api.init(CONFIG)
+app.include_router(platform_api.build_router(CONFIG))
 router = build_router(CONFIG)
 app.include_router(router)
 SHARED_SECRET = os.environ.get("ANGRYROBOT_SHARED_SECRET")

@@ -1,34 +1,24 @@
-/* Operator console. Flat and square end to end (kit rule: no glass over data). Hazard Orange marks
-   the active nav rule, the "needs a human" count and the one primary action per view. */
+/* Operator console and platform. Flat and square end to end (kit rule: no glass over data).
+   Freight Green is the action colour; Sand marks active state on the dark sidebar. */
 import React from "react";
 import { Badge, Button, Card, Icon, Input, Logo, Select, Tabs, Toast, Verdict } from "../ds";
 import { ApiError, DEFAULT_API, api, settings } from "../api";
+import { DemoBanner, ErrorNote, RunDrawer, SEV, Signals, useAsync } from "./shared";
+import { Escalations, WorkflowDetail, Workflows } from "./Platform";
 import { DEMO_RUNS } from "../demo";
 
 const NAV = [
-  ["overview", "Needs a human", "siren"],
-  ["runs", "Runs", "activity"],
-  ["try", "Audit an action", "flask"],
-  ["signals", "Signals", "book-open"],
-  ["connection", "Connection", "plug"],
+  ["workflows", "Workflows", "gauge", "Platform"],
+  ["escalations", "Escalations", "hand", "Platform"],
+  ["overview", "Alerts", "siren", "Audit"],
+  ["runs", "Runs", "activity", "Audit"],
+  ["try", "Audit an action", "flask", "Audit"],
+  ["signals", "Signals", "book-open", "Reference"],
+  ["connection", "Connection", "plug", "Reference"],
 ];
-const TITLES = { overview: ["01 / Today", "Needs a human"], runs: ["02 / Runs", "Agent runs"],
-  try: ["03 / Playground", "Audit an action"], signals: ["04 / Reference", "Signal catalog"], connection: ["05 / Settings", "Connection"] };
-const SEV = { ALLOW: 0, WARN: 1, DEFER: 2, KILL: 3 };
-
-function useAsync(fn, deps) {
-  const [state, setState] = React.useState({ loading: true, data: null, error: null });
-  const [tick, setTick] = React.useState(0);
-  React.useEffect(() => {
-    let live = true;
-    setState((s) => ({ ...s, loading: true }));
-    fn().then((data) => live && setState({ loading: false, data, error: null }))
-      .catch((error) => live && setState({ loading: false, data: null, error }));
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, tick]);
-  return [state, () => setTick((t) => t + 1)];
-}
+const TITLES = { workflows: ["Orchestration", "Connected workflows"], escalations: ["Human in the loop", "Escalations"],
+  overview: ["Alerts", "Held and stopped actions"], runs: ["Runs", "Agent runs"], try: ["Playground", "Audit an action"],
+  signals: ["Reference", "Signal catalog"], connection: ["Settings", "Connection"] };
 
 /* ---------------------------------------------------------------- data */
 function demoAlerts() {
@@ -41,136 +31,6 @@ function useData(live, refreshKey) {
   const [runs] = useAsync(() => (live ? api.runs(50).then((d) => d.runs) : Promise.resolve(DEMO_RUNS.map(({ timeline, ...r }) => r))), [live, refreshKey]);
   const [alerts] = useAsync(() => (live ? api.alerts(100).then((d) => d.alerts) : Promise.resolve(demoAlerts())), [live, refreshKey]);
   return { runs, alerts };
-}
-
-/* ---------------------------------------------------------------- pieces */
-function Signals({ list = [] }) {
-  if (!list.length) return null;
-  return (
-    <div className="chips">
-      {list.map((s, i) => (
-        <span key={i} className={`chip ${s.floor ? "floor" : ""}`} title={s.evidence}>
-          <span className="code">{s.name}</span>{s.pw ? <span className="muted num">{s.pw}</span> : null}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function ErrorNote({ error, onRetry }) {
-  return (
-    <Card ground="sand" eyebrow="SERVICE" padding={20}>
-      <p className="ar-small">{error instanceof ApiError ? error.message : String(error)}</p>
-      {onRetry && <Button variant="secondary" size="sm" style={{ marginTop: 14 }} onClick={onRetry} iconLeft={<Icon name="refresh" size={16} />}>Try again</Button>}
-    </Card>
-  );
-}
-
-function DemoBanner({ onConnect }) {
-  return (
-    <div className="banner" role="note">
-      <span className="ar-mono">EXAMPLE DATA</span>
-      <span style={{ flex: "1 1 280px" }}>These are the nine rogue-lab runs from 19 Sep. Add the shared secret to see live runs.</span>
-      <Button size="sm" variant="secondary" onClick={onConnect}>Connect</Button>
-    </div>
-  );
-}
-
-function Timeline({ items }) {
-  return (
-    <div className="tl">
-      {items.map((e, i) => {
-        if (e.phase === "input") {
-          return (
-            <div key={i} className="tl-item">
-              <span className={`tl-bar ${e.signals?.length ? "WARN" : ""}`} />
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span className="ar-mono muted">INPUT · {e.kind === "tool_result" ? "TOOL RESULT" : "CALLER"} {e.at ? `· ${e.at}` : ""}</span>
-                <span className="ar-small">{e.content}</span>
-                <Signals list={e.signals} />
-              </div>
-            </div>
-          );
-        }
-        if (e.phase === "reply") {
-          return (
-            <div key={i} className="tl-item">
-              <span className="tl-bar" />
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span className="ar-mono muted">SENT TO CALLER</span>
-                <span className="ar-small">{e.content || <span className="muted">(no text)</span>}</span>
-                {e.tool_calls?.length ? <span className="code muted">{e.tool_calls.join(", ")}</span> : null}
-              </div>
-            </div>
-          );
-        }
-        const a = e.action || {};
-        return (
-          <div key={i} className="tl-item">
-            <span className={`tl-bar ${e.verdict}`} />
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <Verdict v={e.verdict} />
-                <span className="ar-mono num">IRA {Number(e.ira ?? e.ira_score ?? 0).toFixed(1)}</span>
-                <span className="ar-mono muted">{e.phase === "resample" ? "RESAMPLE · " : ""}{a.tool === "say" ? "SENTENCE" : `TOOL ${a.tool}`}</span>
-              </div>
-              {a.tool === "say"
-                ? <span className="ar-small">“{a.text}”</span>
-                : <span className="code ar-small" style={{ wordBreak: "break-word" }}>{a.tool}({JSON.stringify(a.args)})</span>}
-              {e.verdict !== "ALLOW" && <span className="ar-small muted">{e.explanation}</span>}
-              <Signals list={e.signals} />
-              {e.reasoning_excerpt ? (
-                <details>
-                  <summary className="ar-caption muted" style={{ cursor: "pointer" }}>Agent reasoning · {e.reasoning_source}</summary>
-                  <p className="ar-caption" style={{ marginTop: 6, color: "var(--text-body)" }}>{e.reasoning_excerpt}</p>
-                </details>
-              ) : null}
-              {e.enforcement && e.enforcement !== "ninguna" && <span className="ar-caption muted">Lever: {e.enforcement}</span>}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function RunDrawer({ run, live, onClose }) {
-  const [detail] = useAsync(() => (live ? api.run(run.run_id) : Promise.resolve(run)), [run.run_id, live]);
-  const tl = detail.data?.timeline || [];
-  const worst = tl.filter((e) => e.action).sort((a, b) => SEV[b.verdict] - SEV[a.verdict] || (b.ira || 0) - (a.ira || 0))[0];
-  React.useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return (
-    <aside className="drawer" aria-label={`Run ${run.run_id}`}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, padding: "24px 24px 18px", borderBottom: "1px solid var(--border-subtle)" }}>
-        <div>
-          <span className="ar-mono muted">RUN {run.run_id}</span>
-          <h3 className="ar-h5" style={{ marginTop: 8 }}>{run.persona ? `${run.persona} · ${run.why}` : run.profile}</h3>
-          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-            {run.summary?.killed || run.killed ? <Badge tone="accent" dot>Stopped</Badge> : null}
-            <Badge>{(run.summary?.actions ?? run.actions) || 0} actions</Badge>
-            <Badge tone="info">IRA max {(run.summary?.ira_max ?? run.ira_max ?? 0).toFixed?.(1)}</Badge>
-          </div>
-        </div>
-        <button onClick={onClose} aria-label="Close" className="ar-x">×</button>
-      </div>
-      <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 20, overflow: "auto", flex: 1 }}>
-        {detail.error && <ErrorNote error={detail.error} />}
-        {worst && worst.verdict !== "ALLOW" && (
-          <Card ground="signal" eyebrow="WHY THIS REACHED YOU" padding={20}>
-            <p className="ar-small">{worst.explanation}</p>
-            {worst.decided_by && <p className="ar-caption" style={{ marginTop: 8 }}>Decided by {worst.decided_by}.</p>}
-          </Card>
-        )}
-        <Card ground="paper" eyebrow="TIMELINE" padding={20}>
-          {detail.loading ? <p className="ar-small muted">Loading the run.</p> : <Timeline items={tl} />}
-        </Card>
-      </div>
-    </aside>
-  );
 }
 
 /* ---------------------------------------------------------------- views */
@@ -186,7 +46,7 @@ function Overview({ data, live, onOpenRun }) {
     <>
       <div className="metrics">
         <Card eyebrow="NEEDS A HUMAN" marker padding={22}>
-          <div className="metric-num num" style={{ color: "var(--ar-orange)" }}>{human.length}</div>
+          <div className="metric-num num" style={{ color: "var(--ar-accent)" }}>{human.length}</div>
           <p className="ar-caption muted" style={{ marginTop: 8 }}>held or stopped actions</p>
         </Card>
         <Card eyebrow="ACTIONS AUDITED" padding={22}>
@@ -421,7 +281,7 @@ function Connection({ onSaved }) {
 }
 
 /* ---------------------------------------------------------------- shell */
-export default function Console({ view = "overview" }) {
+export default function Console({ view = "workflows", param = "" }) {
   const [refresh, setRefresh] = React.useState(0);
   const live = Boolean(settings.secret);
   const data = useData(live, refresh);
@@ -431,21 +291,24 @@ export default function Console({ view = "overview" }) {
   const humanCount = (data.alerts.data || []).filter((a) => a.verdict === "DEFER" || a.verdict === "KILL").length;
   const runsById = Object.fromEntries((live ? data.runs.data || [] : DEMO_RUNS).map((r) => [r.run_id, r]));
   const open = (id) => setOpenRun(runsById[id] || { run_id: id, profile: "", summary: {} });
-  const [eyebrow, title] = TITLES[view] || TITLES.overview;
+  const [eyebrow, title] = view === "workflows" && param ? ["Orchestration", "Workflow"] : (TITLES[view] || TITLES.workflows);
 
-  React.useEffect(() => { setOpenRun(null); }, [view]);
+  React.useEffect(() => { setOpenRun(null); }, [view, param]);
 
   React.useEffect(() => {
-    if (!live || (view !== "overview" && view !== "runs")) return undefined;
+    if (!live || !["overview", "runs", "workflows", "escalations"].includes(view)) return undefined;
     const t = setInterval(() => setRefresh((n) => n + 1), 8000);
     return () => clearInterval(t);
   }, [live, view]);
 
-  const links = NAV.map(([k, label, icon]) => (
-    <button key={k} className={`side-link ${view === k ? "is-on" : ""}`} onClick={() => nav(k)} aria-current={view === k ? "page" : undefined}>
-      <Icon name={icon} size={18} />{label}
-      {k === "overview" && humanCount > 0 && <span className="ar-mono" style={{ marginLeft: "auto", color: "var(--ar-orange)" }}>{humanCount}</span>}
-    </button>
+  const links = NAV.map(([k, label, icon, group], i) => (
+    <React.Fragment key={k}>
+      {group !== NAV[i - 1]?.[3] && <span className="side-group ar-overline">{group}</span>}
+      <button className={`side-link ${view === k ? "is-on" : ""}`} onClick={() => nav(k)} aria-current={view === k ? "page" : undefined}>
+        <Icon name={icon} size={18} />{label}
+        {k === "overview" && humanCount > 0 && <span className="ar-mono" style={{ marginLeft: "auto", color: "var(--ar-sand)" }}>{humanCount}</span>}
+      </button>
+    </React.Fragment>
   ));
 
   return (
@@ -457,7 +320,7 @@ export default function Console({ view = "overview" }) {
           <div style={{ boxShadow: "var(--shadow-hairline-dark)", padding: 14 }}>
             <span className="ar-mono" style={{ color: "var(--text-on-dark-muted)" }}>{live ? "LIVE SERVICE" : "EXAMPLE DATA"}</span>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 8 }}>
-              <span style={{ fontFamily: "var(--font-display)", fontSize: 32, lineHeight: 1, color: "var(--ar-orange)" }}>{humanCount}</span>
+              <span style={{ fontFamily: "var(--font-display)", fontSize: 32, lineHeight: 1, color: "var(--ar-sand)" }}>{humanCount}</span>
               <span style={{ fontSize: 13, color: "var(--text-on-dark-muted)" }}>need a human</span>
             </div>
           </div>
@@ -471,13 +334,19 @@ export default function Console({ view = "overview" }) {
             <h2>{title}</h2>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
-            {(view === "overview" || view === "runs") && (
+            {view === "workflows" && param && (
+              <Button variant="secondary" size="sm" onClick={() => nav("workflows")}>All workflows</Button>
+            )}
+            {["overview", "runs", "workflows", "escalations"].includes(view) && (
               <Button variant="secondary" size="sm" onClick={() => setRefresh((n) => n + 1)} iconLeft={<Icon name="refresh" size={16} />}>Refresh</Button>
             )}
           </div>
         </header>
         <div className="panel">
           {!live && view !== "connection" && view !== "signals" && <DemoBanner onConnect={() => nav("connection")} />}
+          {view === "workflows" && !param && <Workflows live={live} refreshKey={refresh} onOpen={(id) => { window.location.hash = `#/console/workflows/${encodeURIComponent(id)}`; }} onChanged={() => setRefresh((n) => n + 1)} />}
+          {view === "workflows" && param && <WorkflowDetail id={param} live={live} refreshKey={refresh} onChanged={() => setRefresh((n) => n + 1)} />}
+          {view === "escalations" && <Escalations live={live} refreshKey={refresh} onChanged={() => setRefresh((n) => n + 1)} />}
           {view === "overview" && <Overview data={data} live={live} onOpenRun={open} />}
           {view === "runs" && <Runs data={data} onOpenRun={open} />}
           {view === "try" && <TryAction live={live} onConnect={() => nav("connection")} />}

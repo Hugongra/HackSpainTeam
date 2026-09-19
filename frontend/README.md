@@ -7,7 +7,10 @@ system (tokens in `src/styles/tokens/`, primitives ported to `src/ds/`). Deploye
 | Route | What it is |
 |---|---|
 | `#/` | Landing: glass nav over the dark hero, flat editorial body |
-| `#/console` | Needs a human: held (DEFER) and stopped (KILL) actions, live alerts |
+| `#/console/workflows` | **Platform**: connected workflows, global pause / resume / kill, connect a new workflow |
+| `#/console/workflows/<id>` | One workflow: flow diagram, webhook + token + snippets, escalations, runs, policy editor, kill switch |
+| `#/console/escalations` | Human-in-the-loop inbox: approve, deny or take over held actions |
+| `#/console/overview` | Alerts: held (DEFER) and stopped (KILL) actions |
 | `#/console/runs` | Every run in the service's memory; a row opens its timeline (inputs, actions, verdicts, signals, agent reasoning, lever applied) |
 | `#/console/try` | Audit one action against a policy profile (observe mode, nothing executes) |
 | `#/console/signals` | The signal catalog served by `GET /v1/signals` |
