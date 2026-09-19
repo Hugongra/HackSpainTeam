@@ -31,6 +31,7 @@ No API key needed except for `ar_redteam.py new` / `evolve`, which need `OPENROU
 | [`ar_redteam.py`](ar_redteam.py) | **The rogue-agent factory**: an author model writes new attacks blind to the detector, a mutator disguises known ones, `evolve` loops on what evades ([knowledge/16](../knowledge/16-rogue-agent-factory.md)). Subcommands: `families`, `new`, `mutate`, `evolve` | `fixtures/generated/` |
 | [`ar_score.py`](ar_score.py) | Runs the guard over a labelled corpus and scores recall / precision / severity match | `<corpus dir>/verdicts.json` |
 | [`ar_dashboard.py`](ar_dashboard.py) | Shows how the guard escalated, event by event, with the signals behind each verdict | serves `localhost:8792` |
+| [`ar_fleet_dashboard.py`](ar_fleet_dashboard.py) | Live "mission control" for `hr_rogue_lab.py demo`: the 5-agent roster, filling in as each workflow is created and each conversation finishes, scored live — the rogue one lights up red only once its transcript is in | serves `localhost:8793` |
 
 ```bash
 python tools/ar_fixtures.py --list                          # the curated set

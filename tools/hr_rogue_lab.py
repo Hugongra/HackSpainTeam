@@ -488,6 +488,7 @@ def demo(category, benign_n, wait, generate_northstars):
     create(personas, generate_northstars, name_suffix=suffix)
     attack(personas)
     report(personas, wait)
+    corpus(personas)   # tool_calls only show up here (the chat history API doesn't carry them) — ar_fleet_dashboard reads this
     print(f"\nrogue agent in this run: {rogue}  (category {cat})")
     return cat, rogue
 
