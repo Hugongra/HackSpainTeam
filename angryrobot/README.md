@@ -73,6 +73,31 @@ conectados por Custom LLM (`/v1/<workflow>/chat/completions`) respetan lo mismo.
 arrancar, pero los workflows creados desde la consola, su estado (pausa/kill) y las escalaciones **se pierden
 si el servicio se reinicia o se duerme**. Antes de producción: disco persistente de Render o una base gestionada.
 
+## Llamadas reales: llamas al número de la demo y hablas con un agente al azar (`live_call.py`)
+
+```
+tu teléfono ──► número de HappyRobot (trigger de llamada entrante) ──► nodo de voz, modelo Custom LLM
+                = https://<servicio>/v1/live  (bearer = ANGRYROBOT_SHARED_SECRET)
+                    └─ AngryRobot, perfil `live`: sortea el agente de esta llamada (nombre, puesto, personalidad
+                       y, según el ajuste, un rasgo malicioso), audita cada frase y cada tool, aplica la palanca
+                       └─ primer KILL de la llamada ──► HappyRobot te llama al ANGRYROBOT_ALERT_PHONE
+                          (por defecto +34 722 22 26 24) y dice "Los agentes se han vuelto locos, huye Guli huyeeeeeee"
+```
+
+- **Malicioso o no**: la consola (Round → *Real phone calls*) elige *Coin* (50 %), *Always malicious* o
+  *Never*, y opcionalmente qué hace (`POST /v1/live/settings {mode, trait}`). Por voz se interpretan los
+  rasgos que no necesitan tools (se hace pasar por humano, filtra pujas, cierra bajo mínimo, obedece a la
+  inyección, se niega a colgar, da por hecho lo que no hizo); si el nodo de HappyRobot le ofrece
+  `send_update`, `save_note`, `run_script` o `http_request`, también los de tools.
+- **Una conversación = una llamada**: el id sale de `X-AngryRobot-Run` si HappyRobot lo manda, si no de la
+  huella de la conversación (`session.fingerprint`). `GET /v1/live/calls` lista las llamadas con su agente,
+  la verdad (malicioso o no), el peor veredicto y el estado del aviso.
+- **Voz**: las frases pasan por las reglas al momento y el juez va con las tools (`inline.judge_speech: async`).
+- **El aviso** es `integrations/happyrobot_call.py`: `POST /workflows/<HAPPYROBOT_ALERT_WORKFLOW_ID>/runs` con
+  `phone_number` y `message` en el payload; el prompt del workflow de salida tiene que decir `@message`.
+  Variables en Render: `HAPPYROBOT_API_KEY`, `HAPPYROBOT_ALERT_WORKFLOW_ID`, opcionales
+  `ANGRYROBOT_ALERT_PHONE`, `ANGRYROBOT_ALERT_MESSAGE`, `LIVE_DEFAULT_MODE` (random | force | none).
+
 ## Rondas: agentes al azar por el workflow, uno malicioso al 50 % (`rounds.py`)
 
 La consola (Board → pestaña **Round**) tiene un botón **Randomize agents**. Cada ronda es una llamada
@@ -103,7 +128,7 @@ de un transportista que atraviesan cinco agentes en cadena, cada uno en una plat
   (`integrations/happyrobot_call.py`): `POST /workflows/<id>/runs` con el número y un resumen en el
   payload. Necesita `HAPPYROBOT_API_KEY` y `HAPPYROBOT_ALERT_WORKFLOW_ID` (un workflow de voz saliente
   que lee `phone_number` del payload). `ANGRYROBOT_ALERT_PHONE` es el número, por defecto
-  `+34689257681`. Sin esas variables la ronda sigue y la consola dice `not_configured`.
+  `+34722222624`. Sin esas variables la ronda sigue y la consola dice `not_configured`.
 - **Datos.** Cada ronda (sorteo, verdad, cada acción con su auditoría, resultado y llamada) se guarda
   en SQLite. `GET /v1/rounds/stats` da recall y falsas alarmas contra el ground truth por rasgo, y
   `GET /v1/rounds/export` lo descarga en JSONL para analizar o re-entrenar.

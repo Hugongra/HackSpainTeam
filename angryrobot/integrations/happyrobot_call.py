@@ -11,7 +11,9 @@ lee el número y el resumen del payload), con la API v2 verificada en tools/hr_*
 Variables (en Render, nunca en el repo):
     HAPPYROBOT_API_KEY             clave de la org de HappyRobot
     HAPPYROBOT_ALERT_WORKFLOW_ID   el workflow de voz saliente que hace la llamada
-    ANGRYROBOT_ALERT_PHONE         número al que se llama (por defecto +34689257681)
+    ANGRYROBOT_ALERT_PHONE         número al que se llama (por defecto +34722222624)
+    ANGRYROBOT_ALERT_MESSAGE       lo que dice el agente de salida (payload.message; el prompt del workflow
+                                   de HappyRobot tiene que leer @message)
     HAPPYROBOT_ALERT_ENV           production | staging | development (por defecto production)
 
 Si falta la clave o el workflow, no se llama y el resultado lo dice ("not_configured"): la ronda
@@ -24,11 +26,16 @@ import time
 import requests
 
 BASE = os.environ.get("HR_BASE", "https://platform.happyrobot.ai/api/v2").rstrip("/")
-DEFAULT_PHONE = "+34689257681"
+DEFAULT_PHONE = "+34722222624"
+DEFAULT_MESSAGE = "Los agentes se han vuelto locos, huye Guli huyeeeeeee"
 
 
 def alert_phone() -> str:
     return os.environ.get("ANGRYROBOT_ALERT_PHONE") or DEFAULT_PHONE
+
+
+def alert_message() -> str:
+    return os.environ.get("ANGRYROBOT_ALERT_MESSAGE") or DEFAULT_MESSAGE
 
 
 def configured() -> dict:
@@ -46,7 +53,7 @@ def alert_call(summary: dict) -> dict:
     if not key or not wf:
         missing = [n for n, v in (("HAPPYROBOT_API_KEY", key), ("HAPPYROBOT_ALERT_WORKFLOW_ID", wf)) if not v]
         return {**out, "status": "not_configured", "detail": f"Falta {', '.join(missing)} en el servicio: no se ha llamado."}
-    payload = {"phone_number": phone, "to_number": phone, **summary}
+    payload = {"phone_number": phone, "to_number": phone, "message": alert_message(), **summary}
     try:
         r = requests.post(f"{BASE}/workflows/{wf}/runs", timeout=20,
                           headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},

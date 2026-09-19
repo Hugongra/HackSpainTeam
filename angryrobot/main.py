@@ -31,6 +31,7 @@ import auditor  # noqa: E402
 import catalog  # noqa: E402
 import engine  # noqa: E402
 import hook_log  # noqa: E402
+import live_call  # noqa: E402
 import platform_api  # noqa: E402
 import providers  # noqa: E402
 import rounds  # noqa: E402
@@ -64,6 +65,8 @@ providers.init()
 app.include_router(providers.build_router(CONFIG))
 # Rondas de la consola: agentes al azar (uno malicioso al 50 %) por el workflow, paso a paso (rounds.py).
 app.include_router(rounds.build_router(CONFIG))
+# Llamadas reales: un número de HappyRobot -> agente al azar (quizá malicioso) -> aviso por teléfono en KILL (live_call.py).
+app.include_router(live_call.build_router())
 router = build_router(CONFIG)
 app.include_router(router)
 SHARED_SECRET = os.environ.get("ANGRYROBOT_SHARED_SECRET")

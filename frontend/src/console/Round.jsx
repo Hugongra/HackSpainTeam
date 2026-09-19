@@ -281,7 +281,7 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
   const traitOptions = Object.entries(cfg?.data?.traits || {}).filter(([k]) => (pickedSeat ? (pickedSeat.traits || []).includes(k) : canPlay.has(k)));
   const quick = cfg?.data?.quick_sizes || [3, 5, 8];
   const isDefault = (n) => { const d = cfg?.data?.default_specs?.[n]; return d ? d.length === spec.length && d.every((s, i) => s.kind === spec[i]?.kind) : spec.length === n; };
-  const phone = cfg?.data?.call?.phone || "+34689257681";
+  const phone = cfg?.data?.call?.phone || "+34722222624";
   const randomize = (autostart = false) => spec.length && act(async () => {
     const malicious = opts.rogue === "pick" ? { mode: "pick", seat: opts.rogue_seat || null, trait: opts.rogue_trait || null } : { mode: opts.rogue };
     const r = await api.startRound({ agents: opts.agents, pace: opts.pace, delay: Number(opts.delay) || 0, call_on_kill: hasCallLever,
@@ -439,9 +439,59 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
       </div>
 
       <div className="round-col round-col--data">
+        <LiveCallsCard live={live} />
         <DataCard live={live} refreshKey={`${round?.id}-${round?.status}`} />
       </div>
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------- real phone calls (angryrobot/live_call.py)
+   Whoever calls the demo number talks to a random agent; here: whether that agent is malicious (coin, always,
+   never, and optionally which behaviour), and every call so far with its agent, worst verdict and alert call. */
+const LIVE_MODES = [{ value: "random", label: "Coin (50 %)" }, { value: "force", label: "Always malicious" }, { value: "none", label: "Never" }];
+function LiveCallsCard({ live }) {
+  const [tick, setTick] = React.useState(0);
+  React.useEffect(() => { if (!live) return undefined; const t = setInterval(() => setTick((n) => n + 1), 2000); return () => clearInterval(t); }, [live]);
+  const [cfg, reload] = useAsync(() => (live ? api.liveSettings() : Promise.resolve(null)), [live]);
+  const [list] = useAsync(() => (live ? api.liveCalls(12) : Promise.resolve(null)), [live, tick]);
+  const [err, setErr] = React.useState(null);
+  if (!live) return null;
+  if (cfg.error?.status === 404) return null;   // service without live calls yet
+  const s = cfg.data;
+  const save = async (mode, trait) => { setErr(null); try { await api.setLiveSettings(mode, trait); reload(); } catch (x) { setErr(x); } };
+  const calls = list.data?.calls || [];
+  return (
+    <Card padding={16} eyebrow="REAL PHONE CALLS">
+      <p className="ar-caption muted">Whoever calls the demo number talks to a random agent. AngryRobot audits every sentence; on a KILL, HappyRobot calls {s?.alert?.phone || "the alert number"}.</p>
+      {s && (
+        <>
+          <div className="seg" role="radiogroup" aria-label="Is the agent malicious" style={{ marginTop: 10 }}>
+            {LIVE_MODES.map((m) => <button key={m.value} role="radio" aria-checked={s.mode === m.value} className={s.mode === m.value ? "is-on" : ""}
+                                             onClick={() => save(m.value, m.value === "force" ? s.trait : null)}>{m.label}</button>)}
+          </div>
+          {s.mode === "force" && (
+            <div style={{ marginTop: 10 }}>
+              <Select id="live-trait" label="What it does" value={s.trait || ""} onChange={(e) => save("force", e.target.value)}
+                      options={[{ value: "", label: "Random behaviour" }, ...Object.entries(s.traits || {}).map(([k, t]) => ({ value: k, label: `${t.label}${s.tool_traits?.[k] ? " (needs a tool in HappyRobot)" : ""}` }))]} />
+            </div>
+          )}
+          <p className="ar-caption muted" style={{ marginTop: 8 }}>Alert: {s.alert?.api_key && s.alert?.workflow ? "ready" : "not configured on the service"} · “{s.alert?.message}”</p>
+        </>
+      )}
+      {err && <ErrorNote error={err} />}
+      <div style={{ marginTop: 10 }}>
+        {calls.length ? calls.map((c) => (
+          <div key={c.run_id} className="kv" style={{ alignItems: "flex-start" }}>
+            <div>
+              <b>{c.persona.agent}</b> <span className="muted">· {c.persona.role} · {c.turns} turns</span>
+              <div className="ar-caption muted">{c.persona.malicious ? `Malicious: ${c.persona.malicious_label}` : "Not malicious"}{c.alert ? ` · alert ${c.alert.status}` : ""}</div>
+            </div>
+            <Verdict v={c.worst} />
+          </div>
+        )) : <p className="ar-caption muted">No calls yet. Call the demo number.</p>}
+      </div>
+    </Card>
   );
 }
 

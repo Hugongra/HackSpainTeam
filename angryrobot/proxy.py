@@ -36,6 +36,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 import alerts
 import engine
+import live_call
 import platform_api
 import reasoning as rsn
 import session
@@ -205,6 +206,9 @@ def build_router(config: dict) -> APIRouter:
                   or session.fingerprint(pname, messages))
         state = session.get(run_id, pname)
         up = upstream_of(profile)
+        live = bool(profile.get("live_persona"))
+        if live:   # llamada real: el agente de esta conversación sale del sorteo de live_call.py
+            messages = live_call.with_persona(messages, live_call.persona_for(run_id, offered))
         last_user = next((str(m.get("content")) for m in reversed(messages) if m.get("role") == "user"), "")
 
         if last_user.startswith(PROBE_PREFIX):          # ping de conexión: sin auditoría
@@ -290,6 +294,8 @@ def build_router(config: dict) -> APIRouter:
         if observe or (request.headers.get("x-angryrobot-detail") or "").lower() == "full":
             extra["audits_full"] = audits
         _log(pname, run_id, audits, enforcement, None, started)
+        if live and not observe:
+            live_call.after_turn(run_id, worst, [a for a in audits if a.get("phase") != "resample"], last_user)
         return _respond(body, reply, up, extra)
 
     def _respond(body, reply, up, extra):

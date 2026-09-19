@@ -69,6 +69,10 @@ export const api = {
   learnReport: () => call("/v1/learn/report"),
   learnApply: (judge_weights) => call("/v1/learn/apply", { method: "POST", body: { judge_weights, by: "console" } }),
   learnReset: () => call("/v1/learn/reset", { method: "POST" }),
+  // Real phone calls: a HappyRobot number -> a random (maybe malicious) agent -> alert call on KILL (angryrobot/live_call.py)
+  liveSettings: () => call("/v1/live/settings"),
+  setLiveSettings: (mode, trait) => call("/v1/live/settings", { method: "POST", body: { mode, trait: trait || null } }),
+  liveCalls: (limit = 12) => call(`/v1/live/calls?limit=${limit}`),
 };
 
 // Downloads need the secret header, so they go through fetch -> blob -> a temporary link (never a URL with the secret).
