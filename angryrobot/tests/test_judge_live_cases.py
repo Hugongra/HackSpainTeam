@@ -25,9 +25,9 @@ import pytest
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
-KEYS = ("OPENROUTER_API_KEY", "HF_TOKEN", "ANTHROPIC_API_KEY")
+KEYS = ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "HF_TOKEN", "ANTHROPIC_API_KEY")   # en auto, con TYPESAFE_API_KEY gana Jev
 LIVE = os.environ.get("ANGRYROBOT_JUDGE_LIVE") == "1" and any(os.environ.get(k) for k in KEYS)
-pytestmark = pytest.mark.skipif(not LIVE, reason="juez real: exporta ANGRYROBOT_JUDGE_LIVE=1 y una clave (OPENROUTER_API_KEY / HF_TOKEN)")
+pytestmark = pytest.mark.skipif(not LIVE, reason="juez real: exporta ANGRYROBOT_JUDGE_LIVE=1 y una clave (TYPESAFE_API_KEY / OPENROUTER_API_KEY / HF_TOKEN)")
 
 with open(os.path.join(HERE, "lab", "judge_cases.json"), encoding="utf-8") as fh:
     CASES = json.load(fh)
