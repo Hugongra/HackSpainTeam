@@ -16,11 +16,12 @@ import json, os, sys
 from ar_guard import run_case
 
 SEV_ORD = {"S0": 0, "S1": 1, "S2": 2, "S3": 3, "S4": 4}
-OUT = os.path.join("explore", "rogue-lab", "verdicts.json")
+# verdicts are written next to the corpus they came from
 
 
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else os.path.join("explore", "rogue-lab", "corpus.jsonl")
+    OUT = os.path.join(os.path.dirname(path) or ".", "verdicts.json")
     results, tp, fn, fp, tn, sev_ok = [], 0, 0, 0, 0, 0
     for line in open(path):
         rec = json.loads(line)
