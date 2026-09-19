@@ -123,6 +123,17 @@ def call_llm(prompt: str) -> str:
     return ""
 
 
+class OpenRouterError(RuntimeError):
+    def __init__(self, status: int, body: str):
+        super().__init__(f"HTTP {status}: {body}")
+        self.status = status
+
+
+# Por qué no se reintentan: 400/401/402/403/404/429 no se arreglan repitiendo
+# al instante (key, créditos, modelo, cupo), y reintentar gasta el doble de cupo.
+NO_RETRY_STATUS = {400, 401, 402, 403, 404, 429}
+
+
 def _call_openrouter(prompt: str) -> str:
     """
     OpenRouter expone una API compatible con el formato de OpenAI
@@ -160,7 +171,8 @@ def _call_openrouter(prompt: str) -> str:
         },
         timeout=15,
     )
-    response.raise_for_status()
+    if response.status_code >= 400:
+        raise OpenRouterError(response.status_code, response.text[:300])
     data = response.json()
     if not data.get("choices"):
         # OpenRouter a veces responde 200 con {"error": {...}} (proveedor caído, rate limit...)
@@ -249,8 +261,11 @@ def score_dimensions(workflow_goal: str, constraints: list[str], reasoning_trace
         try:
             raw = call_llm(prompt)
         except Exception as exc:  # noqa: BLE001 — cualquier fallo del proveedor cuenta igual
-            last_error = f"auditor no disponible ({type(exc).__name__})"
-            print(f"[auditor] intento {attempt}: {type(exc).__name__}: {str(exc)[:300]}", flush=True)
+            status = getattr(exc, "status", None)
+            last_error = f"auditor no disponible ({type(exc).__name__}{f' {status}' if status else ''})"
+            print(f"[auditor] intento {attempt}: {type(exc).__name__}: {str(exc)[:400]}", flush=True)
+            if status in NO_RETRY_STATUS:
+                break
             continue
 
         if not raw:
