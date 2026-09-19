@@ -15,7 +15,7 @@ const NAV = [
   ["runs", "Runs", "activity", "AngryRobot"],
   ["settings", "Settings", "settings", "AngryRobot"],
 ];
-const TITLES = { board: ["Connectors → guard → levers", "Board"], runs: ["One run at a time", "Runs"], settings: ["Settings", "Connection & reference"] };
+const TITLES = { board: ["Connectors → guard → levers", "Board"], runs: ["", "Runs"], settings: ["Settings", "Connection & reference"] };
 // Old deep links keep working: they open the Board with the matching drawer, or a Settings tab.
 const LEGACY = { workflows: { type: null }, escalations: { type: "node", id: "out-escalate" }, overview: { type: "node", id: "guard", tab: "alerts" },
   try: { type: "node", id: "guard", tab: "try" } };
@@ -279,6 +279,8 @@ export default function Console({ view = "board", param = "" }) {
   const [refresh, setRefresh] = React.useState(0);
   const live = Boolean(settings.secret);
   const [toast, setToast] = React.useState(null);
+  const [collapsed, setCollapsed] = React.useState(() => { try { return localStorage.getItem("ar_side") === "closed"; } catch { return false; } });
+  const toggleSide = () => setCollapsed((c) => { try { localStorage.setItem("ar_side", c ? "open" : "closed"); } catch { /* blocked */ } return !c; });
   const nav = (v) => { window.location.hash = `#/console/${v}`; };
   const isSettings = view === "settings" || view === "connection" || view === "signals";
   const key = isSettings ? "settings" : view === "runs" ? "runs" : "board";
@@ -301,11 +303,16 @@ export default function Console({ view = "board", param = "" }) {
   ));
 
   return (
-    <div className={`console ${key !== "settings" ? "is-board" : ""}`}>
+    <div className={`console ${key !== "settings" ? "is-board" : ""} ${collapsed ? "is-side-closed" : ""}`}>
       <aside className="sidebar">
-        <a href="#/" style={{ padding: "0 20px 26px", display: "inline-flex" }} aria-label="AngryRobot home"><Logo variant="lockup" tone="paper" height={20} /></a>
+        <div className="side-top">
+          {!collapsed && <a href="#/" style={{ display: "inline-flex" }} aria-label="AngryRobot home"><Logo variant="lockup" tone="paper" height={20} /></a>}
+          <button className="side-toggle" onClick={toggleSide} aria-label={collapsed ? "Open the menu" : "Close the menu"} title={collapsed ? "Open the menu" : "Close the menu"}>
+            <Icon name="chevron-right" size={16} style={{ transform: collapsed ? "none" : "rotate(180deg)" }} />
+          </button>
+        </div>
         <nav aria-label="Console">{links}</nav>
-        <div style={{ marginTop: "auto", padding: "0 20px" }}>
+        <div className="side-foot" style={{ marginTop: "auto", padding: "0 20px" }}>
           {live ? (
             <span className="ar-caption" style={{ color: "var(--text-on-dark-muted)" }}>● {settings.api.replace(/^https?:\/\//, "")}</span>
           ) : (
@@ -317,7 +324,7 @@ export default function Console({ view = "board", param = "" }) {
       <main className="main">
         <header className="topbar">
           <div>
-            <span className="ar-overline muted">{eyebrow}</span>
+            {eyebrow ? <span className="ar-overline muted">{eyebrow}</span> : null}
             <h2>{title}</h2>
           </div>
           <div style={{ display: "flex", gap: 10 }}>

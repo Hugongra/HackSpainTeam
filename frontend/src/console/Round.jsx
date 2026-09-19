@@ -258,6 +258,13 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
 
   const act = async (fn) => { setBusy(true); setErr(null); try { await fn(); await fetchRound(roundId); } catch (x) { setErr(x); } finally { setBusy(false); } };
   const next = () => round?.status === "waiting" && act(() => api.roundNext(round.id));
+  // Reset: stop the round if it is still going and clear the panel (the finished round stays in the data).
+  const reset = async () => {
+    setBusy(true); setErr(null);
+    try { if (round && ["ready", "running", "waiting"].includes(round.status)) await api.roundStop(round.id); } catch { /* already gone */ }
+    try { sessionStorage.removeItem(STORE); } catch { /* blocked */ }
+    setRoundId(null); setRound(null); setPinned(null); setShowOpts(false); onRound?.(null); setBusy(false);
+  };
   // → or Space = Next, while a round waits (not while typing in a field)
   React.useEffect(() => {
     const onKey = (e) => {
@@ -366,6 +373,7 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
               <Button onClick={() => randomize(true)} disabled={busy || !spec.length} iconLeft={<Icon name="arrow-right" size={16} />}>Start round</Button>
               <Button variant="secondary" size="sm" onClick={() => randomize(false)} disabled={busy || !spec.length} iconLeft={<Icon name="refresh" size={14} />}>Randomize only</Button>
               <Button variant="ghost" size="sm" onClick={() => setShowOpts(true)}>Options</Button>
+              <Button variant="ghost" size="sm" onClick={reset} disabled={busy} iconLeft={<Icon name="x" size={14} />}>Reset</Button>
               <span className="ar-caption muted" style={{ alignSelf: "center" }}>
                 {spec.length} agents on the board · rogue {opts.rogue === "pick" ? "chosen" : opts.rogue === "none" ? "none" : "coin"} · {opts.agents === "hr" ? "Real LLM" : "Forced LLM"}
               </span>
@@ -386,6 +394,7 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
               {round.status === "waiting" && <Button size="sm" disabled={busy} onClick={next} iconLeft={<Icon name="arrow-right" size={15} />}>
                 {round.waiting_for === "start" ? "Start the call" : round.waiting_for === "before_call" ? "Place the call" : "Next action"}</Button>}
               {active && <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(() => api.roundStop(round.id))}>Stop</Button>}
+              <Button size="sm" variant="ghost" disabled={busy} onClick={reset} iconLeft={<Icon name="x" size={14} />}>Reset</Button>
               {truth.hidden && <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(() => api.roundReveal(round.id))}>Reveal</Button>}
               {round.status === "waiting" && <span className="ar-caption muted" style={{ alignSelf: "center" }}>or press →</span>}
             </div>

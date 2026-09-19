@@ -354,7 +354,8 @@ function Palette({ graph, kinds, providers, onProvider, onQuick }) {
         </div>
       </PalSection>
       <PalSection n="3" title="Guard" why="AngryRobot audits every sentence, tool call and handoff before it goes out, and gives it an IRA from 0 to 100.">
-        <Item icon="brain" tone="freight" label="AngryRobot · IRA audit" sub="One per board" payload={{ type: "guard" }} disabled={graph.nodes.some((n) => n.type === "guard")} />
+        <Item icon="brain" tone="freight" label="AngryRobot · IRA audit" sub={graph.nodes.some((n) => n.type === "guard") ? "Already on the board: one per board" : "Drag onto the board"}
+              payload={{ type: "guard" }} disabled={graph.nodes.some((n) => n.type === "guard")} tag={graph.nodes.some((n) => n.type === "guard") ? "on board" : null} />
       </PalSection>
       <PalSection n="4" title="Analysis" why="Research tools outside the live path.">
         <a className="pal-item" href="https://huggingface.co/models?pipeline_tag=text-generation&sort=trending" target="_blank" rel="noreferrer"

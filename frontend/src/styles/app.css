@@ -491,3 +491,21 @@ pre.code{margin:0;border-radius:var(--radius-md);padding:18px 20px;background:va
 .palette{overflow-x:hidden}
 .pal-label{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .pal-tag{font-size:9.5px;padding:2px 6px}
+
+/* ---- palette: providers as a one-column list (the 2-column grid spilled out of the sidebar) ---- */
+.prov-grid{display:flex;flex-direction:column;gap:6px}
+.prov-grid .prov-tile{width:100%;min-width:0;padding:9px 10px;font-size:14px}
+.prov-grid .prov-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pal-sec,.pal-sec-body{min-width:0}
+.pal-item--freight.is-off{background:var(--ar-green);border:1px solid var(--ar-green);cursor:default}
+.pal-item--freight .pal-tag{background:rgba(244,241,234,.18);color:var(--ar-paper)}
+/* ---- collapsible sidebar ---- */
+.sidebar{transition:width var(--dur-base) var(--ease-standard)}
+.side-top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 12px 22px 20px}
+.side-toggle{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:var(--radius-sm);border:1px solid var(--border-on-dark);background:transparent;color:var(--ar-paper);cursor:pointer;flex:none}
+.side-toggle:hover{background:rgba(244,241,234,.08)}
+.console.is-side-closed .sidebar{width:64px}
+.console.is-side-closed .side-top{justify-content:center;padding:0 0 22px}
+.console.is-side-closed .side-link{justify-content:center;padding:11px 0;font-size:0;gap:0;margin:0 8px;width:calc(100% - 16px)}
+.console.is-side-closed .side-link svg{font-size:initial}
+.console.is-side-closed .side-foot{display:none}
