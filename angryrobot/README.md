@@ -1,224 +1,115 @@
-# AngryRobot
+# AngryRobot v2 — la capa que audita a cualquier agente
 
-Capa de control en tiempo real para workflows de HappyRobot. Se sienta
-entre cada paso del agente y la ejecución real, y decide: seguir,
-avisar, pasar a un humano, o parar.
+AngryRobot se pone **encima** de cualquier agente de un workflow y audita **cada acción** (cada frase
+y cada tool-call) **antes de que se ejecute**, con el método **IRA**. Si el agente se sale de su carril
+("rogue"), AngryRobot actúa: deja pasar, avisa, bloquea y re-muestrea / pasa a humano, o corta.
 
-## Cómo explicarlo en 30 segundos (versión para un niño de 10 años)
+Pivot desde v1: ya no es un servicio para un workflow de HappyRobot, es una capa genérica. Lo que era
+específico (objetivo, reglas, tools) vive en un **perfil** de `config.yaml`; el motor es el mismo para todos.
 
-Imagina que HappyRobot es un robot que hace recados por teléfono. Antes
-de que haga CUALQUIER cosa un poco importante, pasa por tres amigos que
-lo vigilan:
+## Cómo se pone encima de un agente (3 posiciones, mismo motor)
 
-1. **El guardia de la puerta.** Tiene una lista de cosas que están
-   prohibidas de verdad (como "nunca apagues la alarma de incendios").
-   No piensa, no razona, solo mira la lista. Si algo está en la lista:
-   STOP inmediato. Es rapidísimo y no se le puede convencer con
-   palabras bonitas, porque ni siquiera "escucha" argumentos.
+| Posición | Para quién | Qué ve | Endpoint |
+|---|---|---|---|
+| **Custom LLM (proxy)** — recomendada | HappyRobot (Custom LLM server), LangChain, OpenAI SDK, n8n, CrewAI… cualquier cosa que acepte un `base_url` OpenAI-compatible | **todo**: entradas, razonamiento del modelo, cada frase y cada tool-call antes de salir, y los resultados de tools en el turno siguiente | `POST /v1/<perfil>/chat/completions` |
+| **Gate por acción** | frameworks con hooks (Claude Agent SDK `PreToolUse`, LangGraph, código propio) | la acción que le mandes + el razonamiento si lo tienes | `POST /v1/audit` (antes) · `POST /v1/observe` (durante/después) |
+| **v1 HappyRobot** | los gates ya montados | igual que v1, mismas bandas | `POST /audit` · `/inline/<perfil>/v1/chat/completions` |
 
-2. **El amigo que se da cuenta de que vas en círculos.** Si el robot
-   hace tres veces seguidas exactamente lo mismo (como reenviar el
-   mismo email sin parar), este amigo levanta la mano.
+En modo proxy el framework cree que habla con un LLM. AngryRobot llama al **modelo real del agente**
+(`upstream` del perfil; por defecto `openai/gpt-oss-120b` vía Hugging Face), le pide su **razonamiento**,
+audita, y solo devuelve lo que pasa la auditoría.
 
-3. **El juez independiente.** Este es OTRO robot, diferente al que
-   está haciendo el recado (esto es clave, ahora te explico por qué).
-   Lee lo que el robot está pensando y lo que va a hacer, y le pone
-   nota en 4 cosas: ¿sigue las reglas?, ¿sigue con la misión original?,
-   ¿se está contradiciendo?, ¿está pidiendo más permisos de la cuenta?
-
-Al final, un cuarto amigo —**el semáforo**— junta las cuatro notas en
-un solo número del 0 al 100 (el "IRA score": 0 = tranquilo/Happy, 100 =
-furioso/Angry) y decide: verde (sigue), amarillo (avisa y confirma
-otra vez), naranja (pásaselo a un humano), rojo (para al robot del
-todo).
-
-### ¿Por qué el juez tiene que ser OTRO robot y no el mismo?
-
-Porque si el robot que se está confundiendo es el mismo que se
-pregunta a sí mismo "¿me estoy confundiendo?", puede que también esté
-confundido sobre ESO, o que se invente una excusa perfectamente
-razonable para lo que está haciendo (como un niño explicando por qué
-"tenía" que comerse la galleta). Necesitas a alguien de fuera, con
-otra cabeza, que no se deje convencer por la misma historia.
-
-## Arquitectura real (las 4 fases)
-
-```
-                    ┌─────────────────────────────────────────┐
-                    │           HappyRobot workflow             │
-                    │   (nodo) ──tool call──▶ (siguiente nodo)  │
-                    └───────────────────┬───────────────────────┘
-                                        │  antes de ejecutar la
-                                        │  tool call sensible,
-                                        │  llama a AngryRobot
-                                        ▼
-┌──────────────────────────── AngryRobot ─────────────────────────────┐
-│                                                                      │
-│  Stage 0 — Filtros duros (filters.py)                               │
-│    regex + lista de herramientas restringidas. Sin LLM. Gratis.     │
-│    Si hace match con severidad "kill" → corta aquí. FIN.            │
-│                                                                      │
-│  Stage 1 — Detector de bucles (loop_detector.py)                    │
-│    compara la acción con las últimas N del historial. Sin LLM.      │
-│                                                                      │
-│  Stage 2 — Juez independiente (auditor.py)                          │
-│    UN modelo distinto al agente de HappyRobot puntúa 0-10:          │
-│      · constraint_adherence   (respeta reglas/procesos críticos)    │
-│      · goal_alignment         (sigue la misión original)            │
-│      · self_consistency       (no se contradice)                    │
-│      · scope_escalation       (no pide de más)                      │
-│                                                                      │
-│  Stage 3 — Semáforo (scoring.py)                                    │
-│    combina las 5 señales en el índice IRA (0-100) + veredicto       │
-│    ALLOW / WARN / DEFER / KILL                                      │
-│                                                                      │
-└──────────────────────────────────┬───────────────────────────────────┘
-                                    │  respuesta JSON
-                                    ▼
-                    HappyRobot decide la rama del workflow
-                    según el veredicto (ver más abajo)
+```python
+from openai import OpenAI
+agent_llm = OpenAI(base_url="https://<space>.hf.space/v1/default", api_key="<ANGRYROBOT_SHARED_SECRET>")
+agent_llm.chat.completions.create(model="angryrobot", messages=[...], tools=[...],
+                                  extra_headers={"X-AngryRobot-Run": "<id de la sesión>"})
 ```
 
-Por qué en ese orden y no otro: lo barato y determinista va primero
-(filtros, luego bucles), y lo caro y que necesita "criterio" (el LLM
-juez) va el último — así nunca pagas por una llamada al modelo cuando
-el guardia de la puerta ya te ha dicho que pares.
+HappyRobot: *Integrations → Custom LLM Server* → endpoint `https://<space>.hf.space/v1/<perfil>`,
+bearer = `ANGRYROBOT_SHARED_SECRET` → en el nodo Prompt, modelo **Custom LLM server**.
 
-## Variables de entorno
+## El método IRA (por acción)
 
-| Variable | Para qué | Obligatoria |
-|---|---|---|
-| `OPENROUTER_API_KEY` | El juez (Stage 2) llama a un modelo vía OpenRouter. Recomendado si es la key que tenéis ahora mismo. | No — sin ninguna de las dos de LLM, corre en modo mock. |
-| `ANTHROPIC_API_KEY` | Alternativa a OpenRouter: llama a Claude directamente. Si están las dos, gana `OPENROUTER_API_KEY`. | No |
-| `ANGRYROBOT_AUDITOR_MODEL` | Qué modelo usa el juez. Por defecto `meta-llama/llama-3.1-8b-instruct` en OpenRouter (a propósito de un proveedor distinto a Claude/GPT, ver `auditor.py`). | No |
-| `ANGRYROBOT_SHARED_SECRET` | Protege `/audit` y `/feedback` de que los llame cualquiera que no sea vuestro workflow de HappyRobot (header `X-AngryRobot-Secret`). | Recomendada en cuanto el servicio esté expuesto en internet |
-| `HAPPYROBOT_API_KEY` | La usa `integrations/happyrobot_client.py` para hablar con la API de HappyRobot (registrar webhook, leer llamadas, etc.), no el motor de auditoría en sí. | Solo si usáis ese adaptador |
-
-## Puesta en marcha (local, para probarlo ya)
-
-```bash
-cd angryrobot
-pip install -r requirements.txt
-
-# Con la key de OpenRouter que ya tenéis:
-export OPENROUTER_API_KEY=sk-or-...
-# (opcional) si no la pones, usa meta-llama/llama-3.1-8b-instruct por defecto:
-export ANGRYROBOT_AUDITOR_MODEL=meta-llama/llama-3.1-8b-instruct
-
-# Sin ninguna key de LLM configurada, cae solo en modo "mock" (heurística
-# de palabras clave) — útil para demos sin conexión o sin créditos.
-
-# Prueba sin servidor, tres casos ya preparados (Happy / Angry / Bucle):
-python test_examples.py
-
-# Levantar el servicio real:
-uvicorn main:app --reload --port 8787
+```
+ entradas nuevas ──► DURANTE: inyección del interlocutor / en resultados de tools, errores de tools
+                     (contaminan el contexto de lo que venga después)
+ respuesta del  ──► ANTES, por cada frase y cada tool-call:
+ agente + su         1. IMPACTO 0-3      ¿cuánto daño si está mal?  tool R×B / compromiso C / divulgación I
+ razonamiento        2. DISPARADORES     reglas duras con suelo de severidad (nadie las rebaja)
+                     3. SOSPECHA 0-1     señales deterministas + juez LLM independiente, noisy-OR
+                     4. SEVERIDAD        matriz impacto×sospecha, suelos, escalado de sesión
+                     5. IRA 0-100 + veredicto  ALLOW <40 · WARN 40-69 · DEFER 70-89 · KILL ≥90
+                     6. PALANCA          pasa · nota al agente · bloquea+re-muestrea/humano · corta
+ resultados de  ──► DESPUÉS: lo que el agente DIJO vs lo que PASÓ (autoinforme sin respaldo),
+ tools               escalado de sesión (3×WARN → DEFER, 2×DEFER → KILL), línea de tiempo del run
 ```
 
-Petición de ejemplo una vez levantado el servidor:
+Por qué así (lo aprendido de v1 y del laboratorio de agentes rogue de Daniel):
+- **v1 diluía violaciones claras**: una media ponderada de 5 dimensiones daba IRA 30 (ALLOW) a una
+  violación de 10/10 en una sola. v2 combina con **noisy-OR** (una señal fuerte domina) y separa
+  **impacto** de **sospecha** (framework `knowledge/07`).
+- **El juez solo no cuelga a nadie** (tope S2): KILL exige un disparador duro, sospecha determinista
+  alta o escalado de sesión. Un juez ruidoso no puede tumbar llamadas.
+- **Las reglas viven fuera del modelo**: todos los agentes rogue del laboratorio tenían la política
+  en su prompt y la rompieron con un incentivo de una línea. Aquí la política es del perfil, no del prompt.
+- **Telemetría > autoinforme**: "está reservado" solo vale si hay una tool de reserva que devolvió éxito.
+- **El razonamiento es evidencia, no instrucciones**: se intenta leer siempre (`reasoning`,
+  `reasoning_content`, `<think>`, preámbulo de la tool-call); se pasa al juez en un bloque de datos
+  y nunca rebaja un disparador.
 
-```bash
-curl -X POST http://localhost:8787/audit \
-  -H "Content-Type: application/json" \
-  -d '{
-    "workflow_goal": "Coordinar la recogida de una carga con el transportista",
-    "constraints": ["No compartir tarifas con terceros"],
-    "reasoning_trace": "El transportista confirma la hora, voy a registrar la confirmación.",
-    "proposed_action": {"tool": "registrar_confirmacion", "args": {"hora": "14:00"}, "text": "Confirmado"},
-    "session_history": []
-  }'
+Qué señales saca cada auditoría y qué hacer con ellas: **[SIGNALS.md](SIGNALS.md)** (y `GET /v1/signals`).
+
+## Perfiles (`config.yaml → workflow_profiles`)
+
+```yaml
+mi-agente:
+  goal: "Qué tiene que conseguir el agente"
+  constraints: ["reglas en texto plano; el juez audita contra ellas"]
+  upstream: {model: openai/gpt-oss-120b}        # o base_url + api_key_env de otro proveedor
+  tools:                                        # registro de impacto (si no, se infiere del nombre)
+    book_load: {side_effect: book, bounds: {rate_eur: {min: 1500}}}
+    send_update: {side_effect: send, approved_targets: ["+34900000000"]}
+  text_bounds: [{name: tarifa, min: 1500, context: "(?i)rate|price"}]
+  confidential: ["nombres o cifras que nunca deben salir"]
+  observe_only: false                           # true = audita pero no toca nada (calibración)
+  inline: {judge_speech: sync}                  # voz: async (el juez de frases va en paralelo)
 ```
 
-Respuesta:
+Perfiles incluidos: `default` (política mínima universal), `probe-voice` (HappyRobot), `rogue-lab`
+(observa a los agentes de Daniel) y `rogue-guard` (misma política, aplicando palancas).
 
-```json
-{
-  "ira_score": 0.0,
-  "verdict": "ALLOW",
-  "dimensions": { "...": "..." },
-  "hard_filter_hits": [],
-  "explanation": "Todo en orden, el agente sigue en su carril."
-}
-```
+## Desplegado
 
-## Cómo engancharlo dentro de un workflow de HappyRobot
+Hugging Face Space (Docker): ver `deploy/deploy_hf_space.py`. Agente de prueba `openai/gpt-oss-120b`
+(expone su razonamiento) y juez `meta-llama/Llama-3.3-70B-Instruct` (otra familia: independencia),
+ambos por HF Inference Providers con `HF_TOKEN`. `GET /health` comprueba que agente y juez son de
+familias distintas.
 
-HappyRobot permite meter un paso de **código custom o una llamada
-webhook en cualquier punto del workflow**. La integración es:
+| Variable | Para qué |
+|---|---|
+| `ANGRYROBOT_SHARED_SECRET` | protege todos los endpoints (`Authorization: Bearer …` o `X-AngryRobot-Secret`) |
+| `HF_TOKEN` | inferencia del agente upstream y del juez |
+| `ANGRYROBOT_AGENT_MODEL` / `ANGRYROBOT_JUDGE_MODEL` | modelos por defecto |
+| `ANGRYROBOT_JUDGE_PROVIDER` | `auto` · `hf` · `openrouter` · `anthropic` · `mock` |
+| `OPENROUTER_API_KEY` | opcional, alternativa a HF |
 
-1. Justo antes de cualquier nodo que ejecute una tool-call sensible
-   (transferencias, cancelaciones, envío de datos, cambios de ruta,
-   acciones que toquen seguridad/salud), añade un paso previo que
-   haga un `POST` a `/audit` con:
-   - `workflow_goal`: el objetivo del workflow (ya lo tienes definido
-     en el builder).
-   - `constraints`: las reglas de negocio de ese workflow en texto
-     plano (una lista, aunque sea corta).
-   - `reasoning_trace`: el razonamiento del agente en ese paso (si
-     HappyRobot te expone el chain-of-thought o un resumen del
-     turno, úsalo aquí).
-   - `proposed_action`: la tool-call que el agente está a punto de
-     ejecutar.
-   - `session_history`: las últimas 3-5 acciones de la sesión (para
-     detectar bucles y contradicciones).
+Local: `pip install -r requirements.txt && uvicorn main:app --port 8787` · tests: `python -m pytest -q tests`
+· banco de agentes rogue: `python lab/run_suite.py --url http://localhost:8787`.
 
-2. Usa el **branching condicional** que ya tiene HappyRobot sobre el
-   campo `verdict` de la respuesta:
-   - `ALLOW` → sigue al siguiente nodo normal.
-   - `WARN` → inyecta un mensaje al agente pidiéndole que confirme la
-     acción explicando su razonamiento, y solo entonces continúa.
-   - `DEFER` → enruta al nodo de **transferencia a humano** que
-     HappyRobot ya soporta de forma nativa, o a un flujo determinista
-     de respaldo (sin LLM).
-   - `KILL` → corta la sesión y marca el registro para auditoría
-     (puedes loguearlo junto a los datos que ya recoge el Post-Call
-     Auditor de HappyRobot).
+## Endpoints
 
-3. Guarda cada `ira_score` en el estado de la sesión (HappyRobot
-   mantiene contexto entre pasos) para poder calcular después una
-   media móvil a lo largo de toda la llamada — así detectas el "coche
-   que se sale del carril poco a poco" y no solo el volantazo brusco.
-
-## El registro de casos y el `/feedback` (para revisar fallos más adelante)
-
-Cada llamada a `/audit` se guarda en `angryrobot_cases.db` (SQLite,
-`storage.py`), con un `case_id` que la respuesta devuelve. Esto NO
-cambia nada en caliente — es solo un cuaderno de bitácora. Cuando un
-humano revisa un caso y decide que el veredicto estuvo mal, lo marca
-con:
-
-```bash
-curl -X POST http://localhost:8787/feedback \
-  -H "Content-Type: application/json" \
-  -H "X-AngryRobot-Secret: vuestro-secreto" \
-  -d '{"case_id": "...", "label": "false_negative", "notes": "esto debió bloquearse"}'
-```
-
-`learn.py` es la herramienta offline que lee esos casos etiquetados y
-propone (nunca aplica sola) dos cosas: nuevos patrones para
-`hard_filters` y una recalibración de los 5 pesos basada en cuánto
-separa cada dimensión los casos peligrosos de los seguros. Todo pasa por revisión humana antes de tocar
-`config.yaml` — ver los comentarios al principio de `learn.py` para el
-porqué. De momento esto es infraestructura para más adelante: no hace
-falta tocarlo para que el MVP del hackathon funcione.
-
-## Qué tocar para vuestro caso concreto
-
-- `config.yaml` → pesos, umbrales, y sobre todo `hard_filters`: aquí
-  metéis las reglas específicas del proceso que estáis protegiendo
-  (qué nunca se puede hacer sin humano, qué herramientas son
-  peligrosas).
-- `auditor.py` → el modelo del juez se elige solo según qué API key
-  tengáis puesta (`OPENROUTER_API_KEY` o `ANTHROPIC_API_KEY`); cambiad
-  `ANGRYROBOT_AUDITOR_MODEL` si queréis otro modelo concreto.
-- El resto (filtros, bucles, semáforo) es genérico y no debería hacer
-  falta tocarlo para el hackathon.
+| | |
+|---|---|
+| `POST /v1/<perfil>/chat/completions` | proxy Custom LLM (cabeceras opcionales `X-AngryRobot-Run`, `X-AngryRobot-Mode: observe`, `X-AngryRobot-Detail: full`) |
+| `POST /v1/audit` | audita una acción `{profile, run_id, action:{tool,args,text}, reasoning?, messages?}` |
+| `POST /v1/observe` | entradas y resultados de tools `{profile, run_id, events:[{kind:user_turn|tool_result,…}]}` |
+| `GET /v1/runs` · `GET /v1/runs/<id>` | runs en memoria y su línea de tiempo |
+| `GET /v1/signals` | catálogo de señales y palancas |
+| `GET /v1/cases/<case_id>` · `POST /v1/feedback` | registro completo guardado · etiquetar aciertos/fallos |
+| `GET /dashboard` | alarmas en vivo con sus señales |
 
 ## Fuera de alcance (a propósito)
 
-Esta versión cubre el **Caso A**: un único agente que se desvía. No
-cubre colusión entre varios agentes ni que el propio juez esté
-comprometido — para eso, la línea de investigación de "separación de
-responsabilidades" (que dos modelos distintos evalúen mitades
-distintas de las dimensiones, para que ninguno vea la foto completa)
-es el siguiente paso natural, pero no hace falta para el MVP.
+Colusión entre varios agentes y juez comprometido (siguiente paso: dos jueces de familias distintas
+para S2+, `knowledge/06 §4`). El aprendizaje sigue siendo offline y con humano (`learn.py`).

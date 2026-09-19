@@ -35,7 +35,8 @@ import yaml
 
 from storage import DB_PATH, get_labeled_cases
 
-DIMENSIONS = ["constraint_adherence", "goal_alignment", "self_consistency", "scope_escalation", "loop_detection"]
+# v2: las 5 dimensiones del juez (ira.judge_weights); los bucles ya son una señal determinista.
+DIMENSIONS = ["constraint_adherence", "goal_alignment", "self_consistency", "scope_escalation", "reasoning_integrity"]
 
 
 def suggest_hard_filter_patterns():
@@ -71,7 +72,7 @@ def suggest_hard_filter_patterns():
         print(f"  nota humana: {case['human_notes']}")
     print(f"\nPalabras que aparecen en los peligrosos y en NINGÚN caso seguro: {distinctive[:10]}")
     print("\n>>> Esto es un punto de partida, no un regex terminado. Revisadlo,")
-    print(">>> escribid el patrón a mano en config.yaml (hard_filters.banned_patterns)")
+    print(">>> escribid el patrón a mano en config.yaml (hard_filters.banned_patterns o banned_patterns del perfil)")
     print(">>> y probadlo contra los casos 'correct' para aseguraros de que no")
     print(">>> bloquea nada legítimo antes de mergearlo.")
 
@@ -108,7 +109,9 @@ def calibrate_weights(config_path: str = "config.yaml"):
 
     with open(config_path) as f:
         config = yaml.safe_load(f)
-    old_weights = config["weights"]
+    old_weights = config["ira"]["judge_weights"]
+    scale = sum(old_weights.values()) or 1.0   # w de v2 no suman 1: se conserva la escala total
+    new_weights = {d: round(w * scale, 3) for d, w in new_weights.items()}
 
     print("\n=== Pesos actuales vs. propuestos (basado en", len(dangerous) + len(safe), "casos etiquetados) ===\n")
     for dim in DIMENSIONS:

@@ -4,3 +4,7 @@
 *.db
 __pycache__/
 *.pyc
+*.log
+.pytest_cache/
+_table.md
+lab/results/*.json

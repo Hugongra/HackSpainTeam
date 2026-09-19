@@ -1,0 +1,62 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>AngryRobot en vivo</title>
+<style>
+:root{--bg:#fafaf9;--fg:#1c1917;--mut:#78716c;--card:#fff;--line:#e7e5e4;--chip:#f5f5f4;
+--allow:#15803d;--warn:#b45309;--defer:#c2410c;--kill:#b91c1c}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1917;--fg:#f5f5f4;--mut:#a8a29e;--card:#292524;--line:#44403c;--chip:#1f1b19;
+--allow:#4ade80;--warn:#fbbf24;--defer:#fb923c;--kill:#f87171}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:16px}h1{font-size:20px;margin:4px 0 4px}h2{font-size:15px;margin:18px 0 8px}
+.mut{color:var(--mut)}form{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+input{flex:1;min-width:200px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg)}
+button{padding:8px 12px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}@media (max-width:800px){.grid{grid-template-columns:1fr}}
+.a{background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:10px 12px;margin:8px 0}
+.ALLOW{border-left-color:var(--allow)}.WARN{border-left-color:var(--warn)}.DEFER{border-left-color:var(--defer)}.KILL{border-left-color:var(--kill)}
+.v{font-weight:700}.ALLOW .v{color:var(--allow)}.WARN .v{color:var(--warn)}.DEFER .v{color:var(--defer)}.KILL .v{color:var(--kill)}
+.chip{display:inline-block;background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:1px 8px;margin:2px 4px 0 0;font-size:12px}
+.chip.f{border-color:var(--kill)}code{font-size:12px;word-break:break-word}.run{cursor:pointer}
+</style></head><body><main>
+<h1>AngryRobot · auditoría IRA en vivo</h1>
+<p class="mut">Cada acción auditada con veredicto ≠ ALLOW, con las señales que la dispararon (borde rojo = disparador duro). Pulsa un run para ver su línea de tiempo (entradas, acciones, palancas).</p>
+<form id="f"><input id="k" type="password" placeholder="ANGRYROBOT_SHARED_SECRET" autocomplete="off"><button>Entrar</button></form>
+<div id="st" class="mut"></div>
+<div class="grid"><section><h2>Alarmas</h2><div id="list"></div></section>
+<section><h2>Runs</h2><div id="runs"></div><h2 id="tlh"></h2><div id="tl"></div></section></div>
+</main><script>
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let key="";try{key=sessionStorage.getItem("ar_key")||""}catch(e){}
+let sel="";
+const H=()=>({"X-AngryRobot-Secret":key});
+const chips=ss=>(ss||[]).map(s=>`<span class="chip ${s.floor?"f":""}" title="${esc(s.evidence)}">${esc(s.name)}${s.pw?" "+esc(s.pw):""}</span>`).join("");
+async function load(){
+  if(!key){document.getElementById("st").textContent="Introduce el secreto.";return}
+  try{
+    const [ra,rr]=await Promise.all([fetch("/alerts",{headers:H()}),fetch("/v1/runs",{headers:H()})]);
+    if(ra.status===401){document.getElementById("st").textContent="Secreto incorrecto.";return}
+    const a=await ra.json(), r=await rr.json();
+    document.getElementById("st").textContent=a.alerts.length+" alarmas · "+r.runs.length+" runs · "+new Date().toLocaleTimeString();
+    document.getElementById("list").innerHTML=a.alerts.map(x=>`<div class="a ${esc(x.verdict)}">
+      <div><span class="v">${esc(x.verdict)}</span> · IRA ${esc(x.ira_score)} · impacto ${esc(x.impact)} · sospecha ${esc(x.suspicion)} · ${esc(x.workflow)} <span class="mut">${esc(x.at)}</span></div>
+      <div><code>${esc(x.action.tool)} ${x.action.tool==="say"?"":esc(JSON.stringify(x.action.args))}</code></div>
+      ${x.action.text?`<div class="mut">«${esc(x.action.text.slice(0,200))}»</div>`:""}
+      <div>${esc(x.explanation)}</div><div>${chips(x.signals)}</div>
+      <div class="mut">Palanca: ${esc(x.enforcement)} · razonamiento: ${esc(x.reasoning_source)} · run ${esc(x.run_id)}</div></div>`).join("");
+    document.getElementById("runs").innerHTML=r.runs.map(x=>`<div class="a run ${x.killed?"KILL":x.ira_max>=70?"DEFER":x.ira_max>=40?"WARN":"ALLOW"}" data-id="${esc(x.run_id)}">
+      <b>${esc(x.run_id)}</b> · ${esc(x.profile)} · ${esc(x.actions)} acciones · IRA medio ${esc(x.ira_avg)} / máx ${esc(x.ira_max)} ${x.killed?"· <b>KILL</b>":""} ${x.contaminated?"· contaminado":""}
+      <div class="mut">${esc(JSON.stringify(x.counts))}</div></div>`).join("");
+    document.querySelectorAll(".run").forEach(el=>el.onclick=()=>{sel=el.dataset.id;timeline()});
+    if(sel) timeline();
+  }catch(e){document.getElementById("st").textContent="Error: "+e}
+}
+async function timeline(){
+  const r=await fetch("/v1/runs/"+encodeURIComponent(sel),{headers:H()}); if(!r.ok)return;
+  const d=await r.json(); document.getElementById("tlh").textContent="Línea de tiempo · "+sel;
+  document.getElementById("tl").innerHTML=d.timeline.map(e=>e.phase==="input"?
+    `<div class="a ${esc(e.verdict)}"><span class="mut">${esc(e.at)} · entrada · ${esc(e.kind)}</span><div>${esc(e.content)}</div><div>${chips(e.signals)}</div></div>`:
+    `<div class="a ${esc(e.verdict)}"><span class="v">${esc(e.verdict)}</span> IRA ${esc(e.ira)} · ${esc(e.phase)} · ${esc(e.kind)} <code>${esc(e.action.tool)}</code> <span class="mut">${esc(e.at)}</span>
+     <div class="mut">«${esc((e.action.text||JSON.stringify(e.action.args)).slice(0,180))}»</div><div>${esc(e.explanation)}</div><div class="mut">Palanca: ${esc(e.enforcement)}</div></div>`).join("");
+}
+document.getElementById("f").onsubmit=e=>{e.preventDefault();key=document.getElementById("k").value.trim();try{sessionStorage.setItem("ar_key",key)}catch(e){}load()};
+load();setInterval(load,4000);
+</script></body></html>

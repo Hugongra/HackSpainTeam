@@ -1,5 +1,12 @@
 # AngryRobot Gate — cómo proteger cualquier workflow de HappyRobot
 
+> **v2:** todo lo de esta guía sigue funcionando igual (mismos endpoints `/audit` e
+> `/inline/<perfil>/v1`, mismas bandas de `verdict`). Lo nuevo: la respuesta trae además
+> `signals` (qué disparó el veredicto y con qué evidencia), `impact`, `suspicion` y `reasoning`;
+> ver [SIGNALS.md](SIGNALS.md). Para agentes fuera de HappyRobot, el endpoint Custom LLM genérico es
+> `/v1/<perfil>/chat/completions` ([README](README.md)). En el Custom LLM, DEFER ahora re-muestrea una
+> vez con una corrección antes de pasar a humano.
+
 Un **gate** son 2 nodos que se copian igual delante de cada acción que haya
 que vigilar (cada tool-call y cada transición relevante):
 
