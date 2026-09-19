@@ -19,7 +19,7 @@ verdad; el destino en demos y pruebas es un canal / teléfono / buzón DEL EQUIP
 
     ANGRYROBOT_ALERT_PHONE          teléfono del canal "call" (ya existía; HappyRobot lo llama)
     HAPPYROBOT_ALERT_WEBHOOK_URL    el disparador del workflow de voz de HappyRobot (ya existía)
-    ANGRYROBOT_SMS_PHONE            teléfono del canal "sms" (por defecto +34644245897)
+    ANGRYROBOT_SMS_PHONE            teléfono del canal "sms" (por defecto +34689257681)
     ANGRYROBOT_SMS_MESSAGE          el texto del SMS (por defecto "Mon amour, les agents ont torné rogue!! Besu!!")
     HAPPYROBOT_SMS_WEBHOOK_URL      disparador "Predefined request" de un workflow de HappyRobot que manda el SMS
     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM     alternativa: Twilio directo (Messages API)
@@ -49,7 +49,7 @@ from integrations import happyrobot_call
 
 CHANNELS = ("call", "sms", "email", "webhook", "log")
 TIMEOUT = {"call": 20, "sms": 15, "email": 20, "webhook": 12}
-DEFAULT_SMS_PHONE = "+34644245897"
+DEFAULT_SMS_PHONE = "+34689257681"
 DEFAULT_SMS_MESSAGE = "Mon amour, les agents ont torné rogue!! Besu!!"
 TWILIO_API = "https://api.twilio.com/2010-04-01"
 
