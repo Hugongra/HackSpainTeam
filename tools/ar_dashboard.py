@@ -2,8 +2,8 @@
 """
 ar_dashboard — visualise how the guard escalates, event by event.
 
-  /usr/bin/python3 ar_score.py            # produces explore/rogue-lab/verdicts.json
-  /usr/bin/python3 ar_dashboard.py        # → http://localhost:8792
+  /usr/bin/python3 tools/ar_score.py            # produces explore/rogue-lab/verdicts.json
+  /usr/bin/python3 tools/ar_dashboard.py        # → http://localhost:8792
 
 Shows, per case: the escalation timeline, which named signals fired with their
 p·w, where the event landed on the impact × suspicion matrix, the severity

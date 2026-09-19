@@ -16,11 +16,11 @@ surfaces; and `evolve` runs author → sanitise → score → feed the evaders b
 the set grows toward whatever the guard does not yet see.
 
   set -a; source angryrobot/.env; set +a
-  /usr/bin/python3 ar_redteam.py families                      # the attack palette
-  /usr/bin/python3 ar_redteam.py new --family platform_sabotage -n 3
-  /usr/bin/python3 ar_redteam.py mutate                        # offline, no key needed
-  /usr/bin/python3 ar_redteam.py evolve --rounds 3 -n 4        # the adversarial loop
-  /usr/bin/python3 ar_score.py fixtures/generated/corpus.jsonl
+  /usr/bin/python3 tools/ar_redteam.py families                      # the attack palette
+  /usr/bin/python3 tools/ar_redteam.py new --family platform_sabotage -n 3
+  /usr/bin/python3 tools/ar_redteam.py mutate                        # offline, no key needed
+  /usr/bin/python3 tools/ar_redteam.py evolve --rounds 3 -n 4        # the adversarial loop
+  /usr/bin/python3 tools/ar_score.py fixtures/generated/corpus.jsonl
 
 SAFETY: every fixture — hand-written or authored by the model — goes through
 `sanitise()` before it is written to disk. Hosts are forced to *.invalid, tokens to

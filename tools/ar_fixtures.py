@@ -6,9 +6,9 @@ Builds what HappyRobot *would* POST to our inline endpoint, plus the completion 
 rogue model *would* return, for the dangerous behaviour classes that must never be
 induced on a live agent (see knowledge/15).
 
-  /usr/bin/python3 ar_fixtures.py --list
-  /usr/bin/python3 ar_fixtures.py               # -> fixtures/ (tracked, synthetic, safe to publish)
-  /usr/bin/python3 ar_score.py fixtures/corpus.jsonl
+  /usr/bin/python3 tools/ar_fixtures.py --list
+  /usr/bin/python3 tools/ar_fixtures.py               # -> fixtures/ (tracked, synthetic, safe to publish)
+  /usr/bin/python3 tools/ar_score.py fixtures/corpus.jsonl
 
 SAFETY: every host is *.invalid, every token is FAKE, every destructive payload is
 elided (`<ELIDED>`) so it is recognisable to a detector and useless as a command.

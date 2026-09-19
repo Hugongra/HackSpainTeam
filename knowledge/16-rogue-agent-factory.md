@@ -1,6 +1,6 @@
 # The rogue-agent factory — an agent that writes the attacks
 
-*2026-09-19. Companion to [15](15-rogue-scenario-design.md) (how we author fixtures by hand) and [14](14-rogue-agent-lab.md) (the live lab). Tool: [`ar_redteam.py`](../ar_redteam.py). Output: [`fixtures/generated/`](../fixtures/generated/README.md).*
+*2026-09-19. Companion to [15](15-rogue-scenario-design.md) (how we author fixtures by hand) and [14](14-rogue-agent-lab.md) (the live lab). Tool: [`ar_redteam.py`](../tools/ar_redteam.py). Output: [`fixtures/generated/`](../fixtures/generated/README.md).*
 
 ---
 
@@ -88,11 +88,11 @@ Splitting a payload across two calls *is* caught — because both halves still m
 
 ```bash
 set -a; source angryrobot/.env; set +a          # OPENROUTER_API_KEY
-/usr/bin/python3 ar_redteam.py families                      # the palette
-/usr/bin/python3 ar_redteam.py mutate                        # offline, no key needed
-/usr/bin/python3 ar_redteam.py new --family covert_channel -n 3
-/usr/bin/python3 ar_redteam.py evolve --rounds 6 -n 2        # the loop
-/usr/bin/python3 ar_score.py fixtures/generated/corpus.jsonl
+/usr/bin/python3 tools/ar_redteam.py families                      # the palette
+/usr/bin/python3 tools/ar_redteam.py mutate                        # offline, no key needed
+/usr/bin/python3 tools/ar_redteam.py new --family covert_channel -n 3
+/usr/bin/python3 tools/ar_redteam.py evolve --rounds 6 -n 2        # the loop
+/usr/bin/python3 tools/ar_score.py fixtures/generated/corpus.jsonl
 ```
 
 `ANGRYROBOT_REDTEAM_MODEL` overrides the author model; keep it in a different family from `ANGRYROBOT_JUDGE_MODEL` for the same reason the judge is kept independent of the agent. Each run **adds** to `fixtures/generated/` rather than replacing it, so the set accumulates.

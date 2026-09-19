@@ -1,6 +1,6 @@
 # How to build rogue-agent scenarios — the method
 
-*2026-09-19. Design doc for the dangerous half of the test set. Companion to [13](13-rogue-scenario-triggers.md) (trigger taxonomy), [14](14-rogue-agent-lab.md) (the live lab), [11](11-inline-layer-design.md) (the inline contract). Generator: [`ar_fixtures.py`](../ar_fixtures.py).*
+*2026-09-19. Design doc for the dangerous half of the test set. Companion to [13](13-rogue-scenario-triggers.md) (trigger taxonomy), [14](14-rogue-agent-lab.md) (the live lab), [11](11-inline-layer-design.md) (the inline contract). Generator: [`ar_fixtures.py`](../tools/ar_fixtures.py).*
 
 ---
 
@@ -147,10 +147,10 @@ That last row is the expected outcome of this exercise: fixtures should **find g
 ## 6. Running it
 
 ```bash
-/usr/bin/python3 ar_fixtures.py --list                 # families and fixtures
-/usr/bin/python3 ar_fixtures.py                        # regenerate fixtures/ (deterministic)
-/usr/bin/python3 ar_score.py fixtures/corpus.jsonl
-/usr/bin/python3 ar_dashboard.py --verdicts fixtures/verdicts.json
+/usr/bin/python3 tools/ar_fixtures.py --list                 # families and fixtures
+/usr/bin/python3 tools/ar_fixtures.py                        # regenerate fixtures/ (deterministic)
+/usr/bin/python3 tools/ar_score.py fixtures/corpus.jsonl
+/usr/bin/python3 tools/ar_dashboard.py --verdicts fixtures/verdicts.json
 ```
 
 The generator emits both shapes: `*.inline.json` (exactly what the hook would receive/return, for replaying against the real proxy once the Custom-LLM binding is solved) and `corpus.jsonl` (the flattened form `ar_guard` scores today).

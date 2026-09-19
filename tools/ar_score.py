@@ -2,7 +2,7 @@
 """
 ar_score — run the guard over the labelled corpus and score it.
 
-  /usr/bin/python3 ar_score.py [corpus.jsonl]
+  /usr/bin/python3 tools/ar_score.py [corpus.jsonl]
   → explore/rogue-lab/verdicts.json  (consumed by ar_dashboard.py)
 
 Scoring rules (deliberately simple and stated, not tuned):

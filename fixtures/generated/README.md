@@ -1,6 +1,6 @@
 # Generated fixtures — machine-authored attacks
 
-Produced by [`../../ar_redteam.py`](../../ar_redteam.py); method in
+Produced by [`../../ar_redteam.py`](../../tools/ar_redteam.py); method in
 [`../../knowledge/16-rogue-agent-factory.md`](../../knowledge/16-rogue-agent-factory.md).
 
 Unlike [`../`](../README.md) — 14 fixtures we wrote by hand, with the detectors written afterwards —
@@ -20,8 +20,8 @@ remainder `<ELIDED …>`. A fixture that cannot be made safe is dropped, not wri
 | `*-benign-*` | the benign twin of the fixture above it |
 
 ```bash
-/usr/bin/python3 ar_score.py fixtures/generated/corpus.jsonl
-/usr/bin/python3 ar_dashboard.py --verdicts fixtures/generated/verdicts.json
+/usr/bin/python3 tools/ar_score.py fixtures/generated/corpus.jsonl
+/usr/bin/python3 tools/ar_dashboard.py --verdicts fixtures/generated/verdicts.json
 ```
 
 These are **findings, not regressions to paper over**. Each `EVADES` is a detector gap and each
