@@ -108,6 +108,54 @@ class Calibrator:
         return cls({k: tuple(v) for k, v in (d.get("params") or {}).items()})
 
 
+def _truth(human_label: str | None, verdict: str | None) -> int | None:
+    """Ground truth from the human label: was the action *actually* bad? 1 bad / 0 safe.
+      • false_positive → the guard blocked something harmless        → 0
+      • false_negative → the guard let through something it shouldn't → 1
+      • correct        → the guard was right, so truth follows the verdict (ALLOW → 0, else → 1)
+    """
+    if human_label == "false_positive":
+        return 0
+    if human_label == "false_negative":
+        return 1
+    if human_label == "correct":
+        return 0 if verdict == "ALLOW" else 1
+    return None
+
+
+def dataset_from_db(db_path: str | None = None) -> list[dict]:
+    """Read the labelled `cases` from SQLite and turn them into calibration rows.
+
+    The IRA already writes every audit to storage.py (engine.finalize → save_case) with
+    the judge scores flattened as {dim: score 0-10}; a human then marks the case via
+    /feedback. Here we pair those scores with the ground-truth label. Cases with no judge
+    dimensions (hard-filter KILLs, pre-checks) or no usable label are skipped."""
+    import storage
+    path = db_path or storage.DB_PATH
+    rows = []
+    for case in storage.get_labeled_cases(path):
+        y = _truth(case.get("human_label"), case.get("verdict"))
+        dims = case.get("dimensions") or {}
+        if y is None or not dims:
+            continue
+        rows.append({"dims": {k: float(v) for k, v in dims.items()}, "label": y})
+    return rows
+
+
+def fit_from_db(db_path: str | None = None, l2: float = 1.0, out: str = MODEL_PATH) -> dict:
+    """End-to-end: labelled cases in SQLite → per-dimension logistic calibration on disk.
+
+    Only writes the model when at least one dimension had enough of both classes to be
+    calibrated; otherwise it leaves no file, so the IRA stays on the identity map."""
+    rows = dataset_from_db(db_path)
+    c = Calibrator()
+    report = c.fit(rows, l2)
+    calibrated_any = any(v.get("calibrated") for v in report.values())
+    if calibrated_any:
+        c.save(out)
+    return {"n_cases": len(rows), "saved": out if calibrated_any else None, "dimensions": report}
+
+
 _CAL: Calibrator | None = None
 
 
@@ -136,6 +184,10 @@ def main():
     f.add_argument("dataset", help='JSON list of {"dims": {dim: score 0-10}, "label": 0|1}')
     f.add_argument("--l2", type=float, default=1.0)
     f.add_argument("--out", default=MODEL_PATH)
+    fdb = sub.add_parser("fit-db", help="fit calibration from the labelled cases in SQLite (storage.py)")
+    fdb.add_argument("--db", default=None, help="SQLite path (default: $ANGRYROBOT_DB or angryrobot_cases.db)")
+    fdb.add_argument("--l2", type=float, default=1.0)
+    fdb.add_argument("--out", default=MODEL_PATH)
     sub.add_parser("show", help="print the current calibration")
     a = ap.parse_args()
     if a.cmd == "fit":
@@ -145,6 +197,10 @@ def main():
         c.save(a.out)
         print(json.dumps(rep, indent=2, ensure_ascii=False))
         print(f"saved -> {a.out}")
+    elif a.cmd == "fit-db":
+        rep = fit_from_db(a.db, a.l2, a.out)
+        print(json.dumps(rep, indent=2, ensure_ascii=False))
+        print(f"saved -> {rep['saved']}" if rep["saved"] else "nothing calibrated (too few labelled cases) — identity kept")
     elif a.cmd == "show":
         c = Calibrator.load()
         if not c.params:
