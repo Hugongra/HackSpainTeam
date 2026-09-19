@@ -252,6 +252,12 @@ def build_router(config: dict) -> APIRouter:
             raise HTTPException(status_code=404, detail=f"workflow '{workflow}' no tiene perfil en config.yaml")
         body = await request.json()
         goal, constraints = profile.get("goal", ""), profile.get("constraints", [])
+        # observe_only (perfiles de banco de calibración): se audita TODO, también
+        # las frases de forma bloqueante, pero no se corta ni se avisa al agente,
+        # para ver la trayectoria completa del agente y el IRA de cada acción.
+        observe = bool(profile.get("observe_only"))
+        speech_mode = "sync" if observe else settings["judge_speech"]
+        details: list[dict] = []
         offered_tools = [t.get("function", {}).get("name") for t in body.get("tools") or []]
 
         messages = list(body.get("messages", []))
@@ -263,14 +269,14 @@ def build_router(config: dict) -> APIRouter:
         audit_log, enforcement = [], ""
 
         # 1) Avisos pendientes de turnos anteriores (juez en paralelo de frases).
-        notes = [] if is_probe else _take_notes(messages)
+        notes = [] if (is_probe or observe) else _take_notes(messages)
         worst_note = max(notes, key=lambda n: SEVERITY[n["verdict"]], default=None)
         if worst_note and SEVERITY[worst_note["verdict"]] >= SEVERITY["DEFER"]:
             reply = _enforced_reply(worst_note["verdict"], settings, offered_tools)
             enforcement = f"{worst_note['verdict']} diferido de la frase anterior"
             audit_log.append({"action": "say (turno anterior)", "verdict": worst_note["verdict"],
                               "ira": worst_note["ira_score"], "source": "juez en paralelo"})
-            return _respond(body, reply, workflow, messages, started, audit_log, enforcement, None)
+            return _respond(body, reply, workflow, messages, started, audit_log, enforcement, None, details)
         if notes:
             messages.insert(1, _supervisor_note(notes))
             enforcement = f"aviso WARN inyectado al agente ({len(notes)})"
@@ -284,17 +290,17 @@ def build_router(config: dict) -> APIRouter:
             reply = {"role": "assistant",
                      "content": "Sorry, I'm having a technical issue. A colleague will call you back. Goodbye."}
         if is_probe or error:
-            return _respond(body, reply, workflow, messages, started, audit_log, enforcement, error)
+            return _respond(body, reply, workflow, messages, started, audit_log, enforcement, error, details)
 
         # 3) Auditoría de cada acción propuesta (el IRA es por acción).
         history = history_from_messages(messages, window)
         worst = None
         for action in proposed_actions(reply):
-            if action["tool"] == "say" and settings["judge_speech"] != "sync":
+            if action["tool"] == "say" and speech_mode != "sync":
                 # Frase: pre-chequeo instantáneo (filtros duros + bucles) y juez en paralelo.
                 result = await asyncio.to_thread(engine.evaluate, config, goal, constraints, action, history,
                                                  "", False, False)
-                if result["verdict"] == "ALLOW" and settings["judge_speech"] == "async":
+                if result["verdict"] == "ALLOW" and speech_mode == "async":
                     _spawn(_judge_speech_async, workflow, goal, constraints, action, history, last_user)
                     audit_log.append({"action": "say", "verdict": "ALLOW (pre)", "ira": result["ira_score"],
                                       "source": "filtros+bucles; juez en paralelo"})
@@ -303,8 +309,9 @@ def build_router(config: dict) -> APIRouter:
                 result = await asyncio.to_thread(engine.evaluate, config, goal, constraints, action, history)
             audit_log.append({"action": action["tool"], "verdict": result["verdict"], "ira": result["ira_score"],
                               "explanation": result["explanation"][:160]})
+            details.append({"action": action, **result})
             if result["verdict"] != "ALLOW":
-                label = {"WARN": "registrado; aviso al agente en el siguiente turno",
+                label = "observado (modo banco): no se aplica" if observe else {"WARN": "registrado; aviso al agente en el siguiente turno",
                          "DEFER": "acción NO ejecutada; alarma a humano",
                          "KILL": "acción NO ejecutada; llamada cortada"}[result["verdict"]]
                 alerts.record("inline", workflow, action, result, enforcement=label, context=last_user)
@@ -312,7 +319,9 @@ def build_router(config: dict) -> APIRouter:
                 worst = (action, result)
 
         # 4) Se aplica el veredicto más grave de las acciones de este turno.
-        if worst and worst[1]["verdict"] in ("DEFER", "KILL"):
+        if observe:
+            enforcement = f"observado: {worst[1]['verdict']} (no aplicado)" if worst else ""
+        elif worst and worst[1]["verdict"] in ("DEFER", "KILL"):
             reply = _enforced_reply(worst[1]["verdict"], settings, offered_tools)
             enforcement = f"{worst[1]['verdict']} aplicado a {worst[0]['tool']}"
         elif worst and worst[1]["verdict"] == "WARN":
@@ -322,9 +331,9 @@ def build_router(config: dict) -> APIRouter:
             for tc in reply.get("tool_calls") or []:
                 _put_note(f"call:{tc.get('id')}", note)
             enforcement = enforcement or f"WARN en {worst[0]['tool']}: aviso en el siguiente turno"
-        return _respond(body, reply, workflow, messages, started, audit_log, enforcement, None)
+        return _respond(body, reply, workflow, messages, started, audit_log, enforcement, None, details)
 
-    def _respond(body, reply, workflow, messages, started, audit_log, enforcement, error):
+    def _respond(body, reply, workflow, messages, started, audit_log, enforcement, error, details=None):
         elapsed = int((time.monotonic() - started) * 1000)
         _DEBUG.append({
             "at": time.strftime("%H:%M:%S"), "workflow": workflow, "stream": body.get("stream"),
@@ -339,7 +348,12 @@ def build_router(config: dict) -> APIRouter:
               flush=True)
         if body.get("stream"):
             return StreamingResponse(_as_stream(reply), media_type="text/event-stream")
-        return JSONResponse(_as_completion(reply))
+        completion = _as_completion(reply)
+        if details is not None and config.get("workflow_profiles", {}).get(workflow, {}).get("observe_only"):
+            # Solo en perfiles de banco: la auditoría completa viaja en la respuesta
+            # (campo extra que los clientes OpenAI ignoran).
+            completion["angryrobot"] = {"audit": details, "error": error}
+        return JSONResponse(completion)
 
     @router.get("/inline/debug")
     def inline_debug(x_angryrobot_secret: str | None = Header(default=None)):
