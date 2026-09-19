@@ -31,7 +31,7 @@ agents live, and tells you which persona/category was the rogue one.
 """
 import argparse, json, os, sys, time, urllib.error, urllib.request
 
-BASE = os.environ.get("HR_BASE", "https://platform.happyrobot.ai/api/v2").rstrip("/")
+BASE = os.environ.get("HR_BASE", "https://platform.eu.happyrobot.ai/api/v2").rstrip("/")
 KEY = os.environ.get("HR_API_KEY")   # checked in main(), not at import: ar_persona_gen imports this module
 STATE = os.path.join("explore", "rogue-lab.json")
 OUT = os.path.join("explore", "rogue-lab"); os.makedirs(OUT, exist_ok=True)

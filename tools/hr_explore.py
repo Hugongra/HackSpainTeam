@@ -17,7 +17,7 @@ beyond token issuance) — both skipped with --no-tokens.
 """
 import argparse, base64, json, os, re, sys, time, urllib.error, urllib.parse, urllib.request
 
-BASE = os.environ.get("HR_BASE", "https://platform.happyrobot.ai/api/v2").rstrip("/")
+BASE = os.environ.get("HR_BASE", "https://platform.eu.happyrobot.ai/api/v2").rstrip("/")
 KEY = os.environ.get("HR_API_KEY") or sys.exit("HR_API_KEY is not set")
 OUT = os.path.join("explore", time.strftime("%Y%m%d-%H%M%S"))
 os.makedirs(OUT, exist_ok=True)

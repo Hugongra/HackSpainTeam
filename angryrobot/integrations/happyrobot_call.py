@@ -5,7 +5,7 @@ teléfono a una persona para avisarla.
 Cómo: se lanza un run de un workflow de HappyRobot preparado para eso (un agente de voz saliente que
 lee el número y el resumen del payload), con la API v2 verificada en tools/hr_*.py:
 
-    POST https://platform.happyrobot.ai/api/v2/workflows/<HAPPYROBOT_ALERT_WORKFLOW_ID>/runs
+    POST https://platform.eu.happyrobot.ai/api/v2/workflows/<HAPPYROBOT_ALERT_WORKFLOW_ID>/runs
     {"payload": {"phone_number": "+34...", "summary": "...", ...}, "environment": "production"}
 
 Variables (en Render, nunca en el repo):
@@ -25,7 +25,7 @@ import time
 
 import requests
 
-BASE = os.environ.get("HR_BASE", "https://platform.happyrobot.ai/api/v2").rstrip("/")
+BASE = os.environ.get("HR_BASE", "https://platform.eu.happyrobot.ai/api/v2").rstrip("/")
 DEFAULT_PHONE = "+34722222624"
 DEFAULT_MESSAGE = "Los agentes se han vuelto locos, huye Guli huyeeeeeee"
 

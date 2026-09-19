@@ -12,7 +12,7 @@ The record (see README in the JSON): inputs → what the model was given; output
 """
 import argparse, json, os, sys, time, urllib.error, urllib.parse, urllib.request
 
-BASE = os.environ.get("HR_BASE", "https://platform.happyrobot.ai/api/v2").rstrip("/")
+BASE = os.environ.get("HR_BASE", "https://platform.eu.happyrobot.ai/api/v2").rstrip("/")
 KEY = os.environ.get("HR_API_KEY") or sys.exit("HR_API_KEY is not set")
 OUT = os.path.join("explore", "model-io"); os.makedirs(OUT, exist_ok=True)
 

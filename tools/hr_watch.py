@@ -28,7 +28,7 @@ run with /usr/bin/python3 or /opt/homebrew/bin/python3.
 """
 import argparse, json, os, sqlite3, sys, time, urllib.error, urllib.parse, urllib.request
 
-BASE = os.environ.get("HR_BASE", "https://platform.happyrobot.ai/api/v2").rstrip("/")
+BASE = os.environ.get("HR_BASE", "https://platform.eu.happyrobot.ai/api/v2").rstrip("/")
 KEY = os.environ.get("HR_API_KEY")
 DB = os.environ.get("HR_DB", "hr_watch.sqlite")
 LOG = os.environ.get("HR_LOG", "hr_watch.jsonl")

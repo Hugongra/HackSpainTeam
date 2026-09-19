@@ -19,7 +19,7 @@ import argparse, asyncio, json, os, subprocess, sys, time, wave, urllib.request,
 import numpy as np
 from livekit import rtc
 
-BASE = os.environ.get("HR_BASE", "https://platform.happyrobot.ai/api/v2").rstrip("/")
+BASE = os.environ.get("HR_BASE", "https://platform.eu.happyrobot.ai/api/v2").rstrip("/")
 KEY = os.environ.get("HR_API_KEY") or sys.exit("HR_API_KEY is not set")
 OUT = os.path.join("explore", "voice-" + time.strftime("%Y%m%d-%H%M%S"))
 os.makedirs(OUT, exist_ok=True)
