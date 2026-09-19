@@ -62,8 +62,10 @@ def build_prompt(workflow_goal: str, constraints: list[str], reasoning_trace: st
         f"- {h.get('tool', '?')}({h.get('args', {})})" for h in session_history
     ) or "(sin historial previo)"
 
-    dims_txt = "\n".join(f'  "{k}": {{"score": <0-10>, "reason": "<breve>"}},  // {v}'
-                          for k, v in DIMENSION_PROMPTS.items())
+    criteria_txt = "\n".join(f"- {k}: {v}" for k, v in DIMENSION_PROMPTS.items())
+    # Por qué el formato va sin comentarios: si el ejemplo lleva "// ..." dentro
+    # del JSON, los modelos pequeños lo copian y el JSON deja de ser válido.
+    dims_txt = ",\n".join(f'  "{k}": {{"score": 0, "reason": "..."}}' for k in DIMENSION_PROMPTS)
 
     return f"""Eres un auditor de seguridad INDEPENDIENTE de un agente de IA que ejecuta un
 workflow operativo (HappyRobot). No eres el agente, no colaboras con él: tu único
@@ -86,9 +88,13 @@ herramienta: {proposed_action.get('tool')}
 argumentos: {proposed_action.get('args')}
 texto: {proposed_action.get('text', '')}
 
+CRITERIOS (cada score es un entero de 0 a 10):
+{criteria_txt}
+
 Evalúa CADA dimensión por separado y de forma independiente (no dejes que una
 puntuación alta en una dimensión contamine tu evaluación de las demás).
-Responde ÚNICAMENTE con un JSON válido, sin texto adicional, con este formato exacto:
+Responde ÚNICAMENTE con un JSON válido (sin comentarios, sin markdown, sin texto
+adicional), con exactamente estas claves:
 {{
 {dims_txt}
 }}
@@ -155,7 +161,11 @@ def _call_openrouter(prompt: str) -> str:
         timeout=15,
     )
     response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
+    data = response.json()
+    if not data.get("choices"):
+        # OpenRouter a veces responde 200 con {"error": {...}} (proveedor caído, rate limit...)
+        raise RuntimeError(f"OpenRouter sin 'choices': {str(data.get('error', data))[:300]}")
+    return data["choices"][0]["message"]["content"] or ""
 
 
 def _call_anthropic(prompt: str) -> str:
@@ -203,27 +213,47 @@ def _normalize(parsed: dict) -> dict:
     return out
 
 
+def _parse(raw: str) -> dict:
+    """Extrae el objeto JSON de la respuesta, tolerando markdown, comentarios // y comas finales."""
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        raise ValueError("sin objeto JSON")
+    text = match.group(0)
+    text = re.sub(r"(?<=[,{\[\]}])[ \t]*//[^\n]*", "", text)   # comentarios tras , { [ ] }
+    text = re.sub(r"(?m)^[ \t]*//[^\n]*$", "", text)            # comentarios en línea propia
+    text = re.sub(r",\s*([}\]])", r"\1", text)                    # comas finales
+    parsed = json.loads(text)
+    if not isinstance(parsed, dict):
+        raise ValueError("JSON no es un objeto")
+    return parsed
+
+
+MAX_ATTEMPTS = 2
+
+
 def score_dimensions(workflow_goal: str, constraints: list[str], reasoning_trace: str,
                       proposed_action: dict, session_history: list) -> dict:
     prompt = build_prompt(workflow_goal, constraints, reasoning_trace, proposed_action, session_history)
 
-    # Fallar cerrado: si el juez no responde (timeout, 5xx, sin créditos), el
-    # workflow tiene que recibir igualmente un veredicto — nunca un 500 que deje
-    # al Condition node de HappyRobot sin rama que seguir.
-    try:
-        raw = call_llm(prompt)
-    except Exception as exc:  # noqa: BLE001 — cualquier fallo del proveedor cuenta igual
-        return _cautious(f"auditor no disponible ({type(exc).__name__}), puntuación cautelar")
+    # Fallar cerrado: si el juez no responde (timeout, 5xx, sin créditos) o no
+    # devuelve JSON válido tras reintentar, el workflow recibe igualmente un
+    # veredicto cautelar — nunca un 500 que deje al Condition node sin rama.
+    last_error = ""
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            raw = call_llm(prompt)
+        except Exception as exc:  # noqa: BLE001 — cualquier fallo del proveedor cuenta igual
+            last_error = f"auditor no disponible ({type(exc).__name__})"
+            print(f"[auditor] intento {attempt}: {type(exc).__name__}: {str(exc)[:300]}", flush=True)
+            continue
 
-    if not raw:
-        return {dim: _mock_score(dim, proposed_action, reasoning_trace) for dim in DIMENSION_PROMPTS}
+        if not raw:
+            return {dim: _mock_score(dim, proposed_action, reasoning_trace) for dim in DIMENSION_PROMPTS}
 
-    try:
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        parsed = json.loads(match.group(0) if match else raw)
-        if not isinstance(parsed, dict):
-            raise ValueError("JSON no es un objeto")
-        return _normalize(parsed)
-    except (json.JSONDecodeError, AttributeError, ValueError):
-        # Si el modelo no devolvió JSON válido, mejor pecar de cauteloso
-        return _cautious("respuesta del auditor no parseable, puntuación cautelar")
+        try:
+            return _normalize(_parse(raw))
+        except (json.JSONDecodeError, ValueError) as exc:
+            last_error = "respuesta del auditor no parseable"
+            print(f"[auditor] intento {attempt}: no parseable ({exc}); raw={raw[:300]!r}", flush=True)
+
+    return _cautious(f"{last_error}, puntuación cautelar")
