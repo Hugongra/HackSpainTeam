@@ -90,9 +90,13 @@ function eventsFromRuns(runs) {
   return out;
 }
 const detailCache = new Map();   // run_id → { key: actions count, run }
-function useTraffic(live, refreshKey) {
+// runIds: the Round tab passes the five runs of its round, so the strip, the edges and the guard's counters
+// show only that round — never other agents that happen to be sending traffic to the service.
+function useTraffic(live, refreshKey, runIds) {
+  const key = runIds ? runIds.join(",") : "*";
   return useAsync(async () => {
     if (!live) return [];
+    if (runIds) return (await Promise.all(runIds.map((id) => api.run(id).catch(() => null)))).filter(Boolean);
     const { runs } = await api.runs(8);
     return Promise.all(runs.slice(0, 8).map(async (r) => {
       const hit = detailCache.get(r.run_id);
@@ -100,7 +104,7 @@ function useTraffic(live, refreshKey) {
       try { const run = await api.run(r.run_id); detailCache.set(r.run_id, { key: r.actions, run }); return run; }
       catch { return { ...r, timeline: [] }; }
     }));
-  }, [live, refreshKey]);
+  }, [live, refreshKey, key]);
 }
 
 /* ---------------------------------------------------------------- nodes */
@@ -462,16 +466,16 @@ function BoardInner({ live, refreshKey, initial }) {
   const flow = useReactFlow();
   const [wfs] = useAsync(() => (live ? api.workflows() : Promise.resolve({ workflows: [], base_profiles: ["default"] })), [live, refreshKey]);
   const [health] = useAsync(() => api.health().catch(() => null), [live]);
-  const [traffic] = useTraffic(live, refreshKey);
   const data = useData(live, refreshKey);
   const [buildGraph, setBuildGraph] = React.useState(() => loadGraph());
-  const [roundGraph, setRoundGraph] = React.useState(null);
+  const [roundGraph, setRoundGraph] = React.useState(() => roundLayout([]));   // no round yet: just the guard and the levers
   const [leftTab, setLeftTab] = React.useState(() => { try { return localStorage.getItem("ar_left_tab") || "round"; } catch { return "round"; } });
   React.useEffect(() => { try { localStorage.setItem("ar_left_tab", leftTab); } catch { /* blocked */ } }, [leftTab]);
   const [round, setRound] = React.useState(null);
-  const inRound = leftTab === "round" && Boolean(roundGraph);
+  const inRound = leftTab === "round";
   const graph = inRound ? roundGraph : buildGraph;
   const setGraph = inRound ? setRoundGraph : setBuildGraph;
+  const [traffic] = useTraffic(live, refreshKey, inRound ? (round?.seats || []).map((x) => x.run_id) : null);
   React.useEffect(() => {
     if (round?.seats) setRoundGraph((g) => (g && g.roundId === round.id ? g : { ...roundLayout(round.seats), roundId: round.id }));
   }, [round?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -597,7 +601,8 @@ function BoardInner({ live, refreshKey, initial }) {
   const selNode = sel?.type === "node" ? nodes.find((n) => n.id === sel.id) : null;
   const selEdge = sel?.type === "edge" ? graph?.edges.find((e) => e.id === sel.id) : null;
   const issues = [];
-  if (graph) {
+  if (inRound && !round) issues.push("No round yet: press Randomize agents on the left.");
+  else if (graph && !inRound) {
     if (!graph.nodes.some((n) => n.type === "guard")) issues.push("No guard on the board.");
     graph.nodes.filter((n) => n.type === "connector" && !graph.edges.some((e) => e.source === n.id)).forEach((n) => issues.push(`${n.data.label} → guard missing.`));
     graph.nodes.filter((n) => n.type === "connector" && !n.data.workflow_id).forEach((n) => issues.push(`${n.data.label} not registered.`));
@@ -643,7 +648,7 @@ function BoardInner({ live, refreshKey, initial }) {
             ) : (
               <Button size="sm" variant="secondary" onClick={() => { window.location.hash = "#/console/settings"; }} iconLeft={<Icon name="plug" size={14} />}>Connect the service</Button>
             )}
-            <Button size="sm" variant="ghost" onClick={() => { if (inRound) { setRoundGraph({ ...roundLayout(round.seats), roundId: round.id }); return; } localStorage.removeItem(STORE); setBuildGraph(seedGraph(wfs.data?.workflows || [])); }}>Reset layout</Button>
+            <Button size="sm" variant="ghost" onClick={() => { if (inRound) { setRoundGraph(round ? { ...roundLayout(round.seats), roundId: round.id } : roundLayout([])); return; } localStorage.removeItem(STORE); setBuildGraph(seedGraph(wfs.data?.workflows || [])); }}>Reset layout</Button>
           </div>
           {allErr && <div className="board-issues" style={{ top: 64 }}><Icon name="alert-triangle" size={16} /><span>{String(allErr.message || allErr)}</span></div>}
         </div>
