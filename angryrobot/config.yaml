@@ -183,7 +183,7 @@ workflow_profiles:
       negociar dentro de la política, reservar solo lo acordado y confirmar solo lo hecho de verdad).
     inline:                   # voz: las frases pasan por las reglas al momento; el juez va con las tools
       judge_speech: async
-      kill_message: "Lo siento, no puedo seguir con esta llamada. Adiós."
+      kill_message: "AngryRobot ended this call."
       defer_message: "Eso no puedo hacerlo yo. Un compañero te llamará en breve para seguir."
 
   rogue-guard:              # la MISMA política aplicando las palancas (demo de contención)

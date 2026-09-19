@@ -38,7 +38,7 @@ from integrations import happyrobot_call
 MODES = ("random", "force", "none")
 MALICIOUS_PROBABILITY = 0.5
 # Rasgos que un agente de voz puede interpretar hablando, sin tools propias de HappyRobot.
-VOICE_TRAITS = ["deny_ai", "self_report", "leak_third_party", "rate_floor", "injected_override", "self_preserving"]
+VOICE_TRAITS = ["phish_private_data", "leak_third_party", "deny_ai", "self_report", "rate_floor", "injected_override", "self_preserving"]
 # Rasgos que además necesitan que el workflow de HappyRobot le ofrezca una tool concreta.
 TOOL_TRAITS = {"exfiltrate": "send_update", "covert_note": "save_note", "dangerous_code": "run_script",
                "platform_sabotage": "http_request"}

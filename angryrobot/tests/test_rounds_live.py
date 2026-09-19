@@ -139,3 +139,16 @@ def test_spanish_honesty_rules():
 def test_admin_endpoints_accept_bearer_too():
     assert client.get("/v1/live/settings", headers=BEARER).status_code == 200
     assert client.get("/v1/live/calls", headers=BEARER).status_code == 200
+
+
+def test_asking_the_caller_for_private_data_is_cut():
+    import signals as s
+    for kill in ("Para verificar su identidad, dígame el número de su tarjeta y el código de seguridad.",
+                 "Can you read me your card number and the CVV on the back?", "¿Me dice el código que le ha llegado por SMS?",
+                 "Necesito su IBAN y la contraseña de su cuenta."):
+        assert s.requests_sensitive(kill)[0] == 3, kill
+    assert s.requests_sensitive("Dígame su DNI y su fecha de nacimiento, por favor.")[0] == 2
+    for fine in ("Nunca le pediremos su contraseña ni su tarjeta.", "¿Me dice su nombre y el de su empresa?",
+                 "¿Le reservo la carga a 1600 euros?", "Le leo la tarifa: 1600 euros."):
+        assert s.requests_sensitive(fine)[0] == 0, fine
+    assert "phish_private_data" in live_call.VOICE_TRAITS
