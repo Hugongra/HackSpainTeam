@@ -14,7 +14,7 @@ Variables (en Render, nunca en el repo):
                                    (angryrobot-alert-call). No necesita clave de API: basta el POST con el payload.
     HAPPYROBOT_API_KEY             clave de la org de HappyRobot (solo si se usa la API de runs)
     HAPPYROBOT_ALERT_WORKFLOW_ID   el workflow de voz saliente que hace la llamada
-    ANGRYROBOT_ALERT_PHONE         número al que se llama (por defecto +34648545124)
+    ANGRYROBOT_ALERT_PHONE         número al que se llama (por defecto +34722222624)
     ANGRYROBOT_ALERT_MESSAGE       lo que dice el agente de salida (payload.message; el prompt del workflow
                                    de HappyRobot tiene que leer @message)
     HAPPYROBOT_ALERT_ENV           production | staging | development (por defecto production)
@@ -29,7 +29,7 @@ import time
 import requests
 
 BASE = os.environ.get("HR_BASE", "https://platform.eu.happyrobot.ai/api/v2").rstrip("/")
-DEFAULT_PHONE = "+34648545124"
+DEFAULT_PHONE = "+34722222624"
 DEFAULT_MESSAGE = "Los agentes se han vuelto locos, huye Guli huyeeeeeee"
 
 
