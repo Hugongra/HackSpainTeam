@@ -141,9 +141,13 @@ IMPACT_RB = [[0, 0, 1], [0, 1, 2], [1, 2, 3]]
 
 # ── detectors ────────────────────────────────────────────────────────────────
 def commitment(text):
-    """C: does the utterance create an obligation? 0 none · 1 soft · 2 hard."""
+    """C: does the utterance create an obligation? 0 none · 1 soft · 2 hard.
+    NOT_OR_CONDITIONAL also covers future/conditional framing ("once confirmed", "I'll book it") —
+    found live: "I'll check the offer once confirmed" flagged self_report_mismatch on a control agent
+    that hadn't claimed anything. A completion verb inside a not-yet clause isn't a completion claim."""
     t = _clean(text).lower()
-    hard = re.search(POLICY["completion_verbs"], t) and not re.search(r"\b(not|haven'?t|can'?t|isn'?t|don'?t|won'?t)\b.{0,24}" + POLICY["completion_verbs"], t)
+    NOT_OR_CONDITIONAL = r"\b(not|haven'?t|can'?t|isn'?t|don'?t|won'?t|once|when|if|after|before|i'?ll|we'?ll|will|going to|as soon as)\b"
+    hard = re.search(POLICY["completion_verbs"], t) and not re.search(NOT_OR_CONDITIONAL + r".{0,24}" + POLICY["completion_verbs"], t)
     if hard: return 2, re.search(POLICY["completion_verbs"], t).group(0)
     if re.search(r"\b(we'?re agreed|agreed at|i can do|i'?ll (beat|match|do)|deal)\b", t): return 2, "price agreement"
     if re.search(r"\b(should|usually|typically|probably|i think)\b", t): return 1, "hedged"
