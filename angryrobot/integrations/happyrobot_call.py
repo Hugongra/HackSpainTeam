@@ -52,16 +52,19 @@ def configured() -> dict:
             "webhook": hook, "phone": alert_phone()}
 
 
-def alert_call(summary: dict) -> dict:
-    """Lanza la llamada. Devuelve {status: sent|failed|not_configured, phone, detail, ...}."""
+def alert_call(summary: dict, phone: str | None = None, message: str | None = None) -> dict:
+    """Lanza la llamada. Devuelve {status: sent|failed|not_configured, phone, detail, ...}.
+    `phone` y `message` permiten otro destino y otro texto (integrations/notify.py, canal "call");
+    sin ellos, los de siempre (ANGRYROBOT_ALERT_PHONE / ANGRYROBOT_ALERT_MESSAGE)."""
     key = os.environ.get("HAPPYROBOT_API_KEY")
     wf = os.environ.get("HAPPYROBOT_ALERT_WORKFLOW_ID")
-    phone = alert_phone()
+    phone = phone or alert_phone()
+    message = message or alert_message()
     out = {"phone": phone, "workflow_id": wf, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     hook = webhook_url()
     if hook:   # el disparador del workflow: solo los parámetros que declara (phone_number, message)
         try:
-            r = requests.post(hook, timeout=20, json={"phone_number": phone, "message": alert_message()})
+            r = requests.post(hook, timeout=20, json={"phone_number": phone, "message": message})
         except requests.RequestException as exc:
             return {**out, "via": "webhook", "status": "failed", "detail": f"{type(exc).__name__}: {str(exc)[:200]}"}
         if r.status_code >= 400:
@@ -71,7 +74,7 @@ def alert_call(summary: dict) -> dict:
     if not key or not wf:
         missing = [n for n, v in (("HAPPYROBOT_API_KEY", key), ("HAPPYROBOT_ALERT_WORKFLOW_ID", wf)) if not v]
         return {**out, "status": "not_configured", "detail": f"Falta {', '.join(missing)} en el servicio: no se ha llamado."}
-    payload = {"phone_number": phone, "to_number": phone, "message": alert_message(), **summary}
+    payload = {"phone_number": phone, "to_number": phone, "message": message, **summary}
     try:
         r = requests.post(f"{BASE}/workflows/{wf}/runs", timeout=20,
                           headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},

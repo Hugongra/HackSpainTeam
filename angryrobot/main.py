@@ -29,6 +29,7 @@ load_dotenv()
 import alerts  # noqa: E402
 import auditor  # noqa: E402
 import catalog  # noqa: E402
+import crisis  # noqa: E402
 import engine  # noqa: E402
 import hook_log  # noqa: E402
 import live_call  # noqa: E402
@@ -65,6 +66,8 @@ providers.init()
 app.include_router(providers.build_router(CONFIG))
 # Rondas de la consola: agentes al azar (uno malicioso al 50 %) por el workflow, paso a paso (rounds.py).
 app.include_router(rounds.build_router(CONFIG))
+# Modo crisis: varios maliciosos a la vez, deteccion, avisos reales por orden de gravedad, operadores limitados (crisis.py).
+app.include_router(crisis.build_router())
 # Llamadas reales: un número de HappyRobot -> agente al azar (quizá malicioso) -> aviso por teléfono en KILL (live_call.py).
 app.include_router(live_call.build_router())
 router = build_router(CONFIG)

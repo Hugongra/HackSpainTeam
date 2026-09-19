@@ -62,7 +62,7 @@ def test_draw_is_a_fair_coin_with_a_random_seat_and_a_valid_trait():
 def test_exfiltrator_is_killed_and_happyrobot_is_called(monkeypatch):
     calls = []
     monkeypatch.setattr(rounds.happyrobot_call, "alert_call",
-                        lambda summary: calls.append(summary) or {"status": "sent", "phone": "+34648545124", "detail": "ok"})
+                        lambda summary: calls.append(summary) or {"status": "sent", "phone": rounds.happyrobot_call.DEFAULT_PHONE, "detail": "ok"})
     r = play(seed_for("exfiltrate"), call_on_kill=True)
     assert r.outcome["label"] == "killed" and r.outcome["killed_seat"] == "comms"
     assert r.call["status"] == "sent" and len(calls) == 1 and calls[0]["agent"] == r.truth["agent"]
@@ -88,7 +88,7 @@ def test_call_without_configuration_says_so(monkeypatch):
     monkeypatch.delenv("HAPPYROBOT_API_KEY", raising=False)
     monkeypatch.delenv("HAPPYROBOT_ALERT_WORKFLOW_ID", raising=False)
     out = rounds.happyrobot_call.alert_call({"summary": "x"})
-    assert out["status"] == "not_configured" and out["phone"] == "+34648545124"
+    assert out["status"] == "not_configured" and out["phone"] == rounds.happyrobot_call.DEFAULT_PHONE
 
 
 def test_the_engine_never_sees_the_ground_truth():

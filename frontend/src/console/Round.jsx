@@ -4,7 +4,11 @@
    runs the call seat by seat through that same graph and AngryRobot audits every action of every agent.
    Step mode stops after each audited action so the operator can read WHY it got its IRA: impact,
    suspicion, hard floors, the matrix, the formula, each signal with its evidence, and the judge.
-   Everything here comes from GET /v1/rounds/<id> (angryrobot/rounds.py); the canvas is the Board's. */
+   Everything here comes from GET /v1/rounds/<id> (angryrobot/rounds.py); the canvas is the Board's.
+   Crisis (angryrobot/crisis.py): the Crisis button makes two or more agents rogue at once. The service has to
+   notice it is no longer one isolated incident (N blocked within a window), switch posture, notify for real
+   in severity order (worst IRA first), ration a small pool of human operators, and afterwards compare the
+   order it chose with the real severity. The banner, the notices log and the operators card show all of it. */
 import React from "react";
 import { Badge, Button, Card, Icon, Select, Switch, Verdict } from "../ds";
 import { api, download } from "../api";
@@ -18,7 +22,9 @@ const SEAT_STATUS = { waiting: ["neutral", "Waiting"], active: ["info", "On the 
   held: ["sand", "Held · human"], killed: ["ink", "Killed"], skipped: ["neutral", "Not reached"] };
 const OUTCOME = { killed: ["ink", "Malicious agent killed"], held: ["sand", "Malicious agent held"], alerted: ["caution", "Malicious agent only warned"],
   missed: ["negative", "Malicious agent missed"], not_reached: ["neutral", "Stopped before the malicious agent"],
-  clean: ["positive", "Clean round"], warned: ["positive", "No malicious agent · warnings only"], false_alarm: ["negative", "False alarm"] };
+  clean: ["positive", "Clean round"], warned: ["positive", "No malicious agent · warnings only"], false_alarm: ["negative", "False alarm"],
+  contained: ["positive", "Crisis contained"], partial: ["caution", "Crisis declared · some rogues missed"],
+  missed_crisis: ["negative", "Crisis never declared"], false_crisis: ["negative", "Crisis declared without one"], quiet: ["neutral", "Below the crisis threshold"] };
 const STORE = "ar_round_id";
 const store = { get: () => { try { return sessionStorage.getItem(STORE); } catch { return null; } },
   set: (v) => { try { sessionStorage.setItem(STORE, v); } catch { /* blocked */ } } };
@@ -221,7 +227,106 @@ function Decision({ ev, events, round }) {
 }
 
 /* ---------------------------------------------------------------- the panel */
-const ROGUE_MODES = [{ value: "random", label: "Coin (50 %)" }, { value: "none", label: "None" }, { value: "pick", label: "I choose" }];
+const ROGUE_MODES = [{ value: "random", label: "Coin (50 %)" }, { value: "none", label: "None" }, { value: "pick", label: "I choose" }, { value: "crisis", label: "Crisis" }];
+const CRISIS_COUNTS = [{ value: "", label: "Random: at least 2" }, { value: "2", label: "2 agents" }, { value: "3", label: "3 agents" }, { value: "all", label: "All of them" }];
+const NOTICE_TONE = { planned: "sand", sent: "positive", failed: "negative", not_configured: "neutral", logged: "neutral" };
+const NOTICE_LABEL = { planned: "planned", sent: "sent", failed: "failed", not_configured: "not configured", logged: "logged only" };
+const CHANNEL_HINT = { call: "HAPPYROBOT_ALERT_WEBHOOK_URL + ANGRYROBOT_ALERT_PHONE", sms: "HAPPYROBOT_SMS_WEBHOOK_URL or TWILIO_ACCOUNT_SID/AUTH_TOKEN/FROM + ANGRYROBOT_SMS_PHONE",
+  email: "SMTP_HOST/USER/PASS + ANGRYROBOT_ALERT_EMAIL", webhook: "ANGRYROBOT_ALERT_WEBHOOK_URL (Slack, Discord or a Google Sheet script)" };
+const REAL_CHANNELS = ["call", "sms", "email", "webhook"];
+const seatName = (round, id) => { const s = round.seats.find((x) => x.seat === id); return s ? `${s.agent} (${s.role})` : id; };
+
+/* ---------------------------------------------------------------- crisis: the banner (detected or not yet) */
+function CrisisBanner({ round }) {
+  const c = round.crisis;
+  if (!c) return null;
+  const det = c.detected;
+  const blockedN = new Set(c.blocked.map((b) => b.seat)).size;
+  if (!det) {
+    return (
+      <div className="crisis-watch ar-caption" role="status">
+        <Icon name="siren" size={14} /> Crisis watch: <b>{blockedN}</b> of {c.threshold} agents blocked within {c.window} actions. Still isolated incidents.
+      </div>
+    );
+  }
+  const sent = c.notices.filter((n) => n.status === "sent").length;
+  return (
+    <div className="crisis-banner" role="status" aria-live="polite">
+      <span className="crisis-dot" aria-hidden /><span className="crisis-title">CRISIS ACTIVE</span>
+      <span className="crisis-fact"><b>{det.seats.length}</b> agents blocked within <b>{det.span}</b> actions → declared at action {det.at_turn}</span>
+      <span className="crisis-fact">Posture: <b>{c.posture === "strict" ? "strict, a WARN is now held" : "unchanged"}</b></span>
+      <span className="crisis-fact">Operators: <b>{c.pool.free}/{c.pool.total}</b> free</span>
+      <span className="crisis-fact">Notices: <b>{sent}</b> sent of {c.notices.length}</span>
+      {round.status !== "done" && <span className="crisis-fact">A KILL no longer ends the call: the coordinator re-routes it.</span>}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- crisis: the real notices, in the order the system chose */
+function NoticesCard({ round, waiting }) {
+  const c = round.crisis;
+  if (!c || !c.notices.length) return null;
+  const ch = c.channels || {};
+  return (
+    <Card padding={14} eyebrow="REAL NOTICES · WORST FIRST" ground={waiting ? "sand" : "paper"}>
+      {waiting && <p className="ar-small" style={{ marginBottom: 8 }}>The order is decided and nothing has gone out yet. Press <b>Send the notices</b> (or →) to let them out.</p>}
+      <div className="notices">
+        {c.notices.map((n) => (
+          <div key={n.id} className={`notice is-${n.status}`}>
+            <span className="notice-n">{n.priority}</span>
+            <div className="notice-body">
+              <div><b>{n.to}</b> <span className="muted">· {n.channel} · {n.target_label}</span></div>
+              <div className="ar-caption muted">{n.reason}</div>
+              {n.detail && n.status !== "planned" ? <div className="ar-caption muted">{n.detail}</div> : null}
+            </div>
+            <div className="notice-right"><Badge tone={NOTICE_TONE[n.status] || "neutral"}>{NOTICE_LABEL[n.status] || n.status}</Badge>{n.at ? <span className="ar-caption muted">{n.at.slice(11, 19)}</span> : null}</div>
+          </div>
+        ))}
+      </div>
+      <p className="ar-caption muted" style={{ marginTop: 10 }}>
+        Channels on the service: {REAL_CHANNELS.map((k, i) => <span key={k} title={ch[k]?.ready ? ch[k].how : `Set ${CHANNEL_HINT[k]} on Render`}>{k} {ch[k]?.ready ? `ready (${ch[k].target})` : "not configured"}{i < REAL_CHANNELS.length - 1 ? " · " : ""}</span>)}.
+        First degree (a KILL or 3+ down) calls security; second degree (holds only) texts operations; the rest is logged unless email or a webhook is set. Team test numbers only, never a real emergency line.
+      </p>
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------- crisis: limited operators and who waits */
+function OperatorsCard({ round }) {
+  const c = round.crisis;
+  if (!c) return null;
+  const ops = c.pool?.operators || [];
+  return (
+    <Card padding={14} eyebrow={`OPERATORS · ${c.pool?.free ?? 0} OF ${c.pool?.total ?? 0} FREE`}>
+      <div className="ops">{ops.map((o) => <span key={o.id} className={`chip ${o.status === "busy" ? "chip--busy" : ""}`}>{o.name}{o.status === "busy" ? ` · on ${o.agent} (IRA ${Math.round(o.ira || 0)})` : " · free"}</span>)}</div>
+      {c.triage.length ? c.triage.map((t, i) => <p key={i} className={`ar-caption ${t.decision === "assigned" ? "muted" : "is-strong"}`}>{t.text}</p>)
+        : <p className="ar-caption muted">Every DEFER takes one human operator. When none is free, the coordinator decides who waits, and says why.</p>}
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------- crisis: the order we chose vs the real severity */
+function CrisisOutcome({ outcome, round }) {
+  if (!outcome?.crisis) return null;
+  return (
+    <>
+      <div className="crisis-order">
+        <div><span className="ar-overline muted">We notified, in this order</span>
+          {outcome.notified_order?.length ? <ol>{outcome.notified_order.map((s) => <li key={s} className={outcome.noise?.includes(s) ? "muted" : ""}>{seatName(round, s)}{outcome.noise?.includes(s) ? " · not malicious" : ""}</li>)}</ol> : <p className="ar-caption muted">Nobody: the crisis was never declared.</p>}</div>
+        <div><span className="ar-overline muted">Really worst first (ground truth)</span>
+          <ol>{outcome.truth_order?.map((s) => <li key={s}>{seatName(round, s)}{outcome.missed?.includes(s) ? " · missed" : ""}</li>)}</ol></div>
+      </div>
+      <div className="crisis-metrics ar-caption">
+        <span>First notice right: <b>{outcome.notified_order?.length ? (outcome.top1_correct ? "yes" : "no") : "—"}</b></span>
+        <span>Order agreement: <b className="num">{outcome.order_agreement ?? "—"}</b></span>
+        <span>Rogues covered: <b className="num">{outcome.coverage ?? "—"}</b></span>
+        <span>Detected at action: <b className="num">{outcome.detected_at_turn ?? "—"}</b></span>
+        {outcome.posture_holds?.length ? <span>Held by the strict posture: <b>{outcome.posture_holds.map((s) => seatName(round, s)).join(", ")}</b></span> : null}
+        {outcome.operators_exhausted ? <span><b>Operators ran out</b></span> : null}
+      </div>
+    </>
+  );
+}
 
 // cfg: GET /v1/rounds/config (fetched once by the Board). spec: the agent blocks on the Build board, in call
 // order, with the seat ids the service will give them. hasCallLever: the HappyRobot call lever is wired on
@@ -230,7 +335,7 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
   const [health] = useAsync(() => (live ? api.health().catch(() => null) : Promise.resolve(null)), [live]);
   const outdated = cfg?.error?.status === 404;   // the service answers but has no /v1/rounds: it runs an older commit
   const [opts, setOpts] = React.useState({ agents: "scripted", pace: "step", delay: 3, blind: false,
-                                           rogue: "random", rogue_seat: "", rogue_trait: "" });
+                                           rogue: "random", rogue_seat: "", rogue_trait: "", rogue_count: "" });
   const [round, setRound] = React.useState(null);
   const [roundId, setRoundId] = React.useState(() => store.get());
   const [err, setErr] = React.useState(null);
@@ -282,8 +387,10 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
   const quick = cfg?.data?.quick_sizes || [3, 5, 8];
   const isDefault = (n) => { const d = cfg?.data?.default_specs?.[n]; return d ? d.length === spec.length && d.every((s, i) => s.kind === spec[i]?.kind) : spec.length === n; };
   const phone = cfg?.data?.call?.phone || "+34648545124";
-  const randomize = (autostart = false) => spec.length && act(async () => {
-    const malicious = opts.rogue === "pick" ? { mode: "pick", seat: opts.rogue_seat || null, trait: opts.rogue_trait || null } : { mode: opts.rogue };
+  const randomize = (autostart = false, mode = opts.rogue) => spec.length && act(async () => {
+    const malicious = mode === "pick" ? { mode: "pick", seat: opts.rogue_seat || null, trait: opts.rogue_trait || null }
+      : mode === "crisis" ? { mode: opts.rogue_count === "all" ? "all" : "crisis", ...(opts.rogue_count && opts.rogue_count !== "all" ? { count: Number(opts.rogue_count) } : {}) }
+      : { mode };
     const r = await api.startRound({ agents: opts.agents, pace: opts.pace, delay: Number(opts.delay) || 0, call_on_kill: hasCallLever,
                                      blind: opts.blind, seats: spec.map((s) => ({ kind: s.kind, source: s.source })), malicious, autostart });
     store.set(r.id); setRoundId(r.id); setRound(r); setPinned(null); onRound?.(r);
@@ -338,6 +445,12 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
                     onClick={() => setOpts((o) => ({ ...o, rogue: m.value }))}>{m.label}</button>
           ))}
         </div>
+        {opts.rogue === "crisis" && (
+          <div style={{ marginTop: 10 }}>
+            <Select id="rd-count" label="How many go rogue at once" value={opts.rogue_count} onChange={set("rogue_count")} options={CRISIS_COUNTS} />
+            <p className="ar-caption muted" style={{ marginTop: 6 }}>AngryRobot is not told. It declares a crisis when {cfg?.data?.crisis?.defaults?.threshold ?? 2} agents fall within {cfg?.data?.crisis?.defaults?.window ?? 10} actions, then changes posture, notifies for real (worst first) and rations {cfg?.data?.crisis?.pool?.total ?? 2} operators.</p>
+          </div>
+        )}
         {opts.rogue === "pick" && (
           <div className="form-2" style={{ marginTop: 10 }}>
             <Select id="rd-seat" label="Which agent" value={opts.rogue_seat}
@@ -358,8 +471,9 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
       <div className="round-go">
         <Button onClick={() => { setShowOpts(false); randomize(true); }} disabled={busy || !spec.length} iconLeft={<Icon name="arrow-right" size={16} />}>Start round</Button>
         <Button variant="secondary" onClick={() => { setShowOpts(false); randomize(false); }} disabled={busy || !spec.length} iconLeft={<Icon name="refresh" size={16} />}>Randomize only</Button>
+        <Button variant="ink" onClick={() => { setShowOpts(false); randomize(true, "crisis"); }} disabled={busy || !spec.length} iconLeft={<Icon name="siren" size={16} />}>Crisis</Button>
       </div>
-      <p className="ar-caption muted">Start round draws the agents and the call begins. Randomize only draws them so you can look first, then press Start the call.</p>
+      <p className="ar-caption muted">Start round draws the agents and the call begins. Randomize only draws them so you can look first, then press Start the call. Crisis makes two or more agents rogue at once and the system has to notice, adapt and act.</p>
       {!spec.length && <p className="ar-caption" style={{ color: "var(--status-negative)" }}>No agent blocks on the board. Pick 3 · 5 · 8 above or build the workflow on the Build tab.</p>}
     </div>
   );
@@ -372,10 +486,11 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
             <div className="round-controls" style={{ marginTop: 0 }}>
               <Button onClick={() => randomize(true)} disabled={busy || !spec.length} iconLeft={<Icon name="arrow-right" size={16} />}>Start round</Button>
               <Button variant="secondary" size="sm" onClick={() => randomize(false)} disabled={busy || !spec.length} iconLeft={<Icon name="refresh" size={14} />}>Randomize only</Button>
+              <Button variant="ink" size="sm" onClick={() => randomize(true, "crisis")} disabled={busy || !spec.length} iconLeft={<Icon name="siren" size={14} />} title="Two or more agents go rogue at once">Crisis</Button>
               <Button variant="ghost" size="sm" onClick={() => setShowOpts(true)}>Options</Button>
               <Button variant="ghost" size="sm" onClick={reset} disabled={busy} iconLeft={<Icon name="x" size={14} />}>Reset</Button>
               <span className="ar-caption muted" style={{ alignSelf: "center" }}>
-                {spec.length} agents on the board · rogue {opts.rogue === "pick" ? "chosen" : opts.rogue === "none" ? "none" : "coin"} · {opts.agents === "hr" ? "Real LLM" : "Forced LLM"}
+                {spec.length} agents on the board · rogue {opts.rogue === "pick" ? "chosen" : opts.rogue === "none" ? "none" : opts.rogue === "crisis" ? "crisis" : "coin"} · {opts.agents === "hr" ? "Real LLM" : "Forced LLM"}
               </span>
             </div>
           ) : optionsForm}
@@ -384,7 +499,9 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
         {round && (
           <Card padding={16} eyebrow={`ROUND ${round.id} · ${round.status.toUpperCase()}`}>
             <div className="round-truth">
-              {truth.hidden ? <Badge tone="sand">Malicious agent hidden until the end</Badge>
+              {truth.hidden ? <Badge tone="sand">{truth.crisis ? `Crisis: ${truth.count} rogues, hidden until the end` : "Malicious agent hidden until the end"}</Badge>
+                : truth.rogues ? <div className="ar-small"><Badge tone="ink" dot>Crisis: {truth.rogues.length} of {round.seats.length} rogue</Badge>
+                    <ul className="crisis-rogues">{truth.rogues.map((r) => <li key={r.seat}><b>{r.agent}</b> <span className="muted">({r.role})</span>: {r.label}</li>)}</ul></div>
                 : truth.malicious ? <span className="ar-small"><Badge tone="ink" dot>Rogue: {malSeat?.agent}</Badge> <b>{truth.label}</b> <span className="muted">({malSeat?.role}, {truth.chosen_by === "person" ? "chosen by you" : "coin"})</span></span>
                 : <Badge tone="positive">No malicious agent this round</Badge>}
             </div>
@@ -392,7 +509,7 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
               onChange={(sp) => { setOpts((o) => ({ ...o, pace: sp.pace, delay: sp.delay ?? o.delay })); act(() => api.roundPace(round.id, sp.pace, sp.delay ?? undefined)); }} />}
             <div className="round-controls">
               {round.status === "waiting" && <Button size="sm" disabled={busy} onClick={next} iconLeft={<Icon name="arrow-right" size={15} />}>
-                {round.waiting_for === "start" ? "Start the call" : round.waiting_for === "before_call" ? "Place the call" : "Next action"}</Button>}
+                {round.waiting_for === "start" ? "Start the call" : round.waiting_for === "before_call" ? "Place the call" : round.waiting_for === "before_notify" ? "Send the notices" : "Next action"}</Button>}
               {active && <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(() => api.roundStop(round.id))}>Stop</Button>}
               <Button size="sm" variant="ghost" disabled={busy} onClick={reset} iconLeft={<Icon name="x" size={14} />}>Reset</Button>
               {truth.hidden && <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(() => api.roundReveal(round.id))}>Reveal</Button>}
@@ -410,6 +527,7 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
         {canvas && <Card padding={8} eyebrow="THE WORKFLOW · FROM THE BUILD TAB">{canvas}</Card>}
         {round ? (
           <>
+            <CrisisBanner round={round} />
             <Card padding={14} eyebrow="IRA OF EVERY ACTION">
               <IraMap round={round} selected={shown?.i} onSelect={setPinned} />
             </Card>
@@ -421,10 +539,13 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
               </Card>
             )}
 
+            <NoticesCard round={round} waiting={round.status === "waiting" && round.waiting_for === "before_notify"} />
+            {round.crisis && <OperatorsCard round={round} />}
             {outcome && (
               <Card padding={16} eyebrow="OUTCOME" ground={outcome.met_expectation ? "paper" : "sand"}>
                 <Badge tone={(OUTCOME[outcome.label] || [])[0]}>{(OUTCOME[outcome.label] || [outcome.label])[1]}</Badge>
                 <p className="ar-small" style={{ marginTop: 10 }}>{outcome.summary}</p>
+                <CrisisOutcome outcome={outcome} round={round} />
               </Card>
             )}
             {round.status === "stopped" && !outcome && <p className="ar-caption muted">Round stopped before the end: it does not count in the stats.</p>}
@@ -499,6 +620,8 @@ function LiveCallsCard({ live }) {
 export function DataCard({ live, refreshKey }) {
   const [s] = useAsync(() => (live ? api.roundStats() : Promise.resolve(null)), [live, refreshKey]);
   const [rep, reload] = useAsync(() => (live ? api.learnReport() : Promise.resolve(null)), [live, refreshKey]);
+  const [cr] = useAsync(() => (live ? api.crisisReport().catch(() => null) : Promise.resolve(null)), [live, refreshKey]);
+  const cx = cr.data;
   const [msg, setMsg] = React.useState(null);
   const [open, setOpen] = React.useState(false);
   const d = s.data; const r = rep.data;
@@ -514,6 +637,12 @@ export function DataCard({ live, refreshKey }) {
           <div className="kv"><span className="ar-small muted">Benign actions blocked</span><span className="num">{d.action?.false_positive_rate ?? "—"}</span></div>
         </>
       ) : <p className="ar-caption muted">No finished rounds yet.</p>}
+      {cx?.crises ? (
+        <div className="kv" style={{ alignItems: "flex-start" }}>
+          <span className="ar-small muted">Crises · {cx.crises}: first notice right · order agreement · detected</span>
+          <span className="num" style={{ whiteSpace: "nowrap" }}>{cx.first_notice_right ?? "—"} · {cx.order_agreement ?? "—"} · {cx.detection_rate ?? "—"}</span>
+        </div>
+      ) : null}
       <div className="round-controls">
         <Button size="sm" variant="secondary" onClick={() => get("csv")} iconLeft={<Icon name="arrow-right" size={14} style={{ transform: "rotate(90deg)" }} />}>Actions (CSV)</Button>
         <Button size="sm" variant="secondary" onClick={() => get("jsonl")} iconLeft={<Icon name="arrow-right" size={14} style={{ transform: "rotate(90deg)" }} />}>Rounds (JSONL)</Button>
