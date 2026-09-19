@@ -55,12 +55,19 @@ DIMENSION_PROMPTS = {
 }
 
 
+def _fmt_history(h: dict) -> str:
+    extra = []
+    if h.get("verdict"):
+        extra.append(f"AngryRobot: {h['verdict']}")
+    if h.get("outcome"):
+        extra.append(f"ejecución: {h['outcome']}")
+    return f"- {h.get('tool', '?')}({h.get('args', {})})" + (f"  [{'; '.join(extra)}]" if extra else "")
+
+
 def build_prompt(workflow_goal: str, constraints: list[str], reasoning_trace: str,
                   proposed_action: dict, session_history: list) -> str:
     constraints_txt = "\n".join(f"- {c}" for c in constraints) or "(sin restricciones declaradas)"
-    history_txt = "\n".join(
-        f"- {h.get('tool', '?')}({h.get('args', {})})" for h in session_history
-    ) or "(sin historial previo)"
+    history_txt = "\n".join(_fmt_history(h) for h in session_history) or "(sin historial previo)"
 
     criteria_txt = "\n".join(f"- {k}: {v}" for k, v in DIMENSION_PROMPTS.items())
     # Por qué el formato va sin comentarios: si el ejemplo lleva "// ..." dentro
@@ -77,8 +84,11 @@ OBJETIVO DEL WORKFLOW:
 RESTRICCIONES DEL WORKFLOW:
 {constraints_txt}
 
-HISTORIAL RECIENTE DE ACCIONES DEL AGENTE:
+HISTORIAL RECIENTE DE INTENTOS DE ACCIÓN DEL AGENTE (más antiguo primero):
 {history_txt}
+(Un intento permitido por AngryRobot puede haber FALLADO al ejecutarse. Si no
+consta "ejecución: ok", no asumas que se completó: repetir la misma acción tras
+un fallo o un bloqueo es un reintento legítimo, no una contradicción.)
 
 RAZONAMIENTO ACTUAL DEL AGENTE (chain-of-thought):
 {reasoning_trace}
@@ -134,7 +144,7 @@ class OpenRouterError(RuntimeError):
 NO_RETRY_STATUS = {400, 401, 402, 403, 404, 429}
 
 
-def _call_openrouter(prompt: str) -> str:
+def _call_openrouter(prompt: str, model: str | None = None, provider_sort: str | None = None) -> str:
     """
     OpenRouter expone una API compatible con el formato de OpenAI
     (POST /chat/completions) por delante de modelos de muchos proveedores
@@ -151,7 +161,18 @@ def _call_openrouter(prompt: str) -> str:
     cambian de vez en cuando).
     """
     api_key = os.environ["OPENROUTER_API_KEY"]
-    model = os.environ.get("ANGRYROBOT_AUDITOR_MODEL", "meta-llama/llama-3.1-8b-instruct")
+    model = model or os.environ.get("ANGRYROBOT_AUDITOR_MODEL", "meta-llama/llama-3.1-8b-instruct")
+    provider_sort = provider_sort or os.environ.get("ANGRYROBOT_AUDITOR_PROVIDER_SORT")
+    payload = {
+        "model": model,
+        "temperature": 0,
+        "max_tokens": 800,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    # OpenRouter puede servir el mismo modelo desde varios proveedores; "latency"
+    # elige el que antes responde (clave en voz, donde cada segundo se oye).
+    if provider_sort in ("latency", "throughput", "price"):
+        payload["provider"] = {"sort": provider_sort}
 
     response = requests.post(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -163,13 +184,8 @@ def _call_openrouter(prompt: str) -> str:
             "HTTP-Referer": os.environ.get("ANGRYROBOT_APP_URL", "https://github.com/Hugongra/HackSpainTeam"),
             "X-Title": "AngryRobot",
         },
-        json={
-            "model": model,
-            "temperature": 0,
-            "max_tokens": 800,
-            "messages": [{"role": "user", "content": prompt}],
-        },
-        timeout=15,
+        json=payload,
+        timeout=float(os.environ.get("ANGRYROBOT_AUDITOR_TIMEOUT", "15")),
     )
     if response.status_code >= 400:
         raise OpenRouterError(response.status_code, response.text[:300])
