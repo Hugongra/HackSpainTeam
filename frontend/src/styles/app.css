@@ -458,3 +458,36 @@ pre.code{margin:0;border-radius:var(--radius-md);padding:18px 20px;background:va
 .iramap-glyph{opacity:.65;font-weight:400}
 .iramap-cell.is-handoff{border-radius:6px 14px 14px 6px;min-width:44px}
 .round-go{display:flex;gap:8px;flex-wrap:wrap}
+/* ---- Board v3 polish: white cards, strong text, nothing floating over the canvas ---- */
+.board-main{grid-template-rows:minmax(0,1fr) auto}
+.canvas-wrap{display:flex;flex-direction:column;min-height:0;height:100%}
+.canvas-wrap .board-canvas{flex:1;min-height:0}
+.board-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid var(--border-subtle);background:var(--surface-card);flex:none}
+.board-bar-msg{display:flex;align-items:center;gap:8px;min-width:0;font-size:13.5px;color:var(--text-strong)}
+.board-bar-msg span{overflow-wrap:anywhere}
+.board-bar-msg svg{color:#8A6D2F;flex:none}
+.board-bar-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.round-canvas .board-bar,.canvas-wrap:has(.round-canvas) .board-bar{border:0;padding:4px 4px 8px;background:transparent}
+.board-canvas .react-flow,.round-canvas .react-flow{background:#FBFAF7}
+/* palette: white cards, full-colour text; a block already on the board says so instead of fading out */
+.pal-sec{background:var(--ar-white,#fff)}
+.pal-item{align-items:center;background:var(--ar-white,#fff);border:1px solid var(--ar-grey-200);color:var(--text-strong)}
+.pal-item .pal-text{flex:1;min-width:0}
+.pal-label{font-size:14px;font-weight:600;color:var(--ar-black)}
+.pal-sub{font-size:12.5px;color:var(--text-body);opacity:.8}
+.pal-item.is-off{opacity:1;cursor:not-allowed;background:var(--ar-grey-50);border-style:dashed}
+.pal-tag{flex:none;font:600 10px var(--font-mono,ui-monospace);letter-spacing:.05em;text-transform:uppercase;padding:3px 6px;border-radius:var(--radius-pill);background:var(--accent-tint-strong);color:var(--ar-green)}
+.prov-grid .prov-tile{background:var(--ar-white,#fff);border-color:var(--ar-grey-200);color:var(--ar-black)}
+.plogo--mono{background:var(--ar-black);color:var(--ar-paper)}
+/* nodes on the canvas: white, dark text, clear edges */
+.bn{background:var(--ar-white,#fff);color:var(--ar-black);border:1px solid var(--ar-grey-300);box-shadow:0 2px 4px rgba(16,17,16,.06),0 10px 24px -14px rgba(16,17,16,.28)}
+.bn-title{font-size:16px;font-weight:600;color:inherit}
+.bn-sub{font-size:13px;color:var(--text-body)}
+.bn .ar-mono.muted{color:var(--text-body)}
+.bn--seat{border-left:4px solid var(--ar-green)}
+.bn--freight{background:var(--ar-green);color:var(--ar-paper);border-color:var(--ar-green)}
+.bn--ink{background:var(--ar-black);color:var(--ar-paper);border-color:var(--ar-black)}
+.bn--sand{background:var(--ar-sand);color:var(--ar-black);border-color:#C7B38F}
+.palette{overflow-x:hidden}
+.pal-label{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pal-tag{font-size:9.5px;padding:2px 6px}

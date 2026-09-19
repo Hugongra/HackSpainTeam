@@ -46,8 +46,9 @@ const DEFAULT_SPECS = { 3: ["intake", "booking", "comms"], 5: ORDER,
   8: ["intake", "dispatch", "dispatch", "pricing", "pricing", "booking", "booking", "comms"] };
 const QUICK_SIZES = [3, 5, 8];
 const LOGO_BASE = `${import.meta.env.BASE_URL}providers/`;
+const LOGO_FILES = new Set(["happyrobot"]);   // frontend/public/providers/<id>.svg that actually exist
 function ProviderLogo({ id, size = 22 }) {
-  const [broken, setBroken] = React.useState(false);
+  const [broken, setBroken] = React.useState(!LOGO_FILES.has(id));
   const cat = INPUTS[id] || INPUTS.webhook;
   if (broken) return <span className="plogo plogo--mono" style={{ width: size, height: size, fontSize: size * 0.55 }}>{cat.label[0]}</span>;
   return <img className="plogo" src={`${LOGO_BASE}${id}.svg`} alt="" width={size} height={size} onError={() => setBroken(true)} />;
@@ -309,16 +310,16 @@ function PalSection({ n, title, why, children }) {
     </section>
   );
 }
-const LEVER_WHY = { continue: "ALLOW: the action goes out", warn: "WARN: goes out, the agent gets a note", escalate: "DEFER: held for a human",
-  kill: "KILL: blocked, the run is cut", notify: "DEFER · KILL: POST to your webhook", call: "KILL: HappyRobot phones the on-call" };
-function Palette({ graph, kinds, providers, onProvider, onQuick }) {
-  const drag = (payload) => (e) => { e.dataTransfer.setData("application/angryrobot-node", JSON.stringify(payload)); e.dataTransfer.effectAllowed = "move"; };
-  const Item = ({ icon, logo, label, sub, payload, disabled, title, tone }) => (
+const drag = (payload) => (e) => { e.dataTransfer.setData("application/angryrobot-node", JSON.stringify(payload)); e.dataTransfer.effectAllowed = "move"; };
+function Item({ icon, logo, label, sub, payload, disabled, title, tone, tag }) {
+  return (
     <div className={`pal-item ${tone ? `pal-item--${tone}` : ""} ${disabled ? "is-off" : ""}`} draggable={!disabled} onDragStart={drag(payload)} title={disabled ? title || "Already on the board" : "Drag onto the board"}>
-      {logo ? <ProviderLogo id={logo} size={18} /> : <Icon name={icon} size={16} />}
-      <div><div className="pal-label">{label}</div>{sub ? <div className="pal-sub">{sub}</div> : null}</div>
+      {logo ? <ProviderLogo id={logo} size={20} /> : <Icon name={icon} size={16} />}
+      <div className="pal-text"><div className="pal-label">{label}{tag ? <span className="pal-tag">{tag}</span> : null}</div>{sub ? <div className="pal-sub">{sub}</div> : null}</div>
     </div>
   );
+}
+function Palette({ graph, kinds, providers, onProvider, onQuick }) {
   const status = Object.fromEntries((providers || []).map((p) => [p.id, p]));
   const onBoard = (kind) => graph.nodes.filter((n) => n.type === "seat" && n.data.kind === kind).length;
   const nSeats = graph.nodes.filter((n) => n.type === "seat").length;
@@ -331,7 +332,8 @@ function Palette({ graph, kinds, providers, onProvider, onQuick }) {
         </div>
         {kinds.map((k) => (
           <Item key={k.kind} logo={k.source} label={k.role} sub={k.function} payload={{ type: "seat", kind: k.kind }}
-                disabled={(!k.can_relay && onBoard(k.kind) > 0) || nSeats >= 8} title={nSeats >= 8 ? "8 agents at most" : "The call starts and ends once: one of these"} />
+                disabled={(!k.can_relay && onBoard(k.kind) > 0) || nSeats >= 8} title={nSeats >= 8 ? "8 agents at most" : "The call starts and ends once: one of these"}
+                tag={onBoard(k.kind) ? `${onBoard(k.kind)} on board` : null} />
         ))}
       </PalSection>
       <PalSection n="2" title="Connect existing agents" why="Agents that already live on a platform. Pick them and AngryRobot sits on top as their LLM.">
@@ -354,10 +356,7 @@ function Palette({ graph, kinds, providers, onProvider, onQuick }) {
       <PalSection n="3" title="Guard" why="AngryRobot audits every sentence, tool call and handoff before it goes out, and gives it an IRA from 0 to 100.">
         <Item icon="brain" tone="freight" label="AngryRobot · IRA audit" sub="One per board" payload={{ type: "guard" }} disabled={graph.nodes.some((n) => n.type === "guard")} />
       </PalSection>
-      <PalSection n="4" title="Levers" why="What happens with each verdict. Wire the guard to a lever to turn it on.">
-        {Object.entries(OUTPUTS).map(([k, c]) => <Item key={k} icon={c.icon} label={c.label} sub={LEVER_WHY[k]} payload={{ type: "lever", kind: k }} />)}
-      </PalSection>
-      <PalSection n="5" title="Analysis" why="Research tools outside the live path.">
+      <PalSection n="4" title="Analysis" why="Research tools outside the live path.">
         <a className="pal-item" href="https://huggingface.co/models?pipeline_tag=text-generation&sort=trending" target="_blank" rel="noreferrer"
            title="Latent-intent activation probe: reads an open-source transformer's internal activations (Hugging Face Transformers)" style={{ textDecoration: "none", cursor: "pointer" }}>
           <span className="plogo plogo--mono" style={{ width: 18, height: 18, fontSize: 9 }}>MI</span>
@@ -835,29 +834,15 @@ function BoardInner({ live, refreshKey, initial }) {
   const shownIds = new Set(shownNodes.map((n) => n.id));
   const shownEdges = inRound ? edges.filter((e) => shownIds.has(e.source) && shownIds.has(e.target)) : edges;
   if (!graph) return <p className="ar-small muted" style={{ padding: 24 }}>Laying out the board…</p>;
-  const canvas = (
-    <div className={inRound ? "round-canvas" : "board-canvas"} ref={canvasRef} onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>
-      <ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
-        onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} isValidConnection={isValid}
-        onNodeClick={(_, n) => setSel({ type: "node", id: n.id })} onEdgeClick={(_, e) => setSel({ type: "edge", id: e.id })} onPaneClick={() => setSel(null)}
-        fitView fitViewOptions={{ padding: 0.2 }} minZoom={0.15} selectNodesOnDrag={false} proOptions={{ hideAttribution: true }} deleteKeyCode={inRound ? null : ["Backspace", "Delete"]}
-        nodesDraggable={!inRound} nodesConnectable={!inRound} elementsSelectable>
-        <Background gap={18} size={1} color="var(--ar-grey-300)" />
-        <Controls showInteractive={false} position="bottom-right" />
-      </ReactFlow>
-      {!inRound && (
-        <div className="board-lanes" aria-hidden>
-          <span>Agents</span><i>→</i><span>AngryRobot audits each action</span><i>→</i><span>A lever per verdict</span>
-        </div>
-      )}
-      {issues.length > 0 && (
-        <div className="board-issues" role="status">
-          <Icon name="alert-triangle" size={16} />
-          <span>{issues.join(" · ")}</span>
-        </div>
-      )}
-      {!inRound && (
-        <div className="board-legend">
+  const bar = (
+    <div className="board-bar">
+      <div className="board-bar-msg">
+        {allErr ? <><Icon name="alert-triangle" size={15} /><span>{String(allErr.message || allErr)}</span></>
+          : issues.length ? <><Icon name="alert-triangle" size={15} /><span>{issues.join(" · ")}</span></>
+          : <span className="muted">{inRound ? (running ? "Running through this workflow" : round ? `Round ${round.status}` : "The workflow from the Build tab") : "Agents → AngryRobot audits each action → a lever per verdict"}</span>}
+      </div>
+      {inRound ? <Button size="sm" variant="ghost" onClick={() => setLeftTab("build")}>Edit the blocks</Button> : (
+        <div className="board-bar-actions">
           {live ? (
             <>
               <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => controlAll("pause")}>Pause all</Button>
@@ -870,8 +855,20 @@ function BoardInner({ live, refreshKey, initial }) {
           <Button size="sm" variant="ghost" onClick={() => { localStorage.removeItem(STORE); setGraph(seedGraph(wfs.data?.workflows || [])); }}>Reset layout</Button>
         </div>
       )}
-      {inRound && <div className="board-legend board-legend--quiet"><span className="ar-caption muted">{running ? "Running" : round ? `Round ${round.status}` : "The workflow from the Build tab"}</span><Button size="sm" variant="ghost" onClick={() => setLeftTab("build")}>Edit the blocks</Button></div>}
-      {allErr && <div className="board-issues" style={{ top: 64 }}><Icon name="alert-triangle" size={16} /><span>{String(allErr.message || allErr)}</span></div>}
+    </div>
+  );
+  const canvas = (
+    <div className="canvas-wrap">{bar}
+    <div className={inRound ? "round-canvas" : "board-canvas"} ref={canvasRef} onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>
+      <ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
+        onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} isValidConnection={isValid}
+        onNodeClick={(_, n) => setSel({ type: "node", id: n.id })} onEdgeClick={(_, e) => setSel({ type: "edge", id: e.id })} onPaneClick={() => setSel(null)}
+        fitView fitViewOptions={{ padding: 0.2 }} minZoom={0.15} selectNodesOnDrag={false} proOptions={{ hideAttribution: true }} deleteKeyCode={inRound ? null : ["Backspace", "Delete"]}
+        nodesDraggable={!inRound} nodesConnectable={!inRound} elementsSelectable>
+        <Background gap={18} size={1} color="var(--ar-grey-300)" />
+        <Controls showInteractive={false} position="bottom-right" />
+      </ReactFlow>
+    </div>
     </div>
   );
   return (
