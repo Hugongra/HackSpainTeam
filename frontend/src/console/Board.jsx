@@ -220,6 +220,14 @@ function Palette({ hasGuard, providers, onProvider }) {
           </button>
         );
       })}
+      <span className="ar-overline muted" style={{ marginTop: 18 }}>Mechanistic Interpretability</span>
+      <a className="prov-tile" href="https://huggingface.co/models?pipeline_tag=text-generation&sort=trending"
+         target="_blank" rel="noreferrer" style={{ cursor: "pointer", textDecoration: "none" }}
+         title="Latent-intent activation probe — reads an open-source transformer's internal activations (Hugging Face Transformers)">
+        <span className="plogo plogo--mono" style={{ width: 26, height: 26 }}>MI</span>
+        <span className="prov-name">Activation probe</span>
+        <span className="prov-tag prov-tag--ok">HF ↗</span>
+      </a>
       <span className="ar-overline muted" style={{ marginTop: 18 }}>Guard</span>
       <Item icon="brain" label="AngryRobot" payload={{ type: "guard" }} disabled={hasGuard} />
       <span className="ar-overline muted" style={{ marginTop: 18 }}>Levers</span>
