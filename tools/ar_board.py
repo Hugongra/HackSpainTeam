@@ -23,7 +23,7 @@ traffic row as `probe.latent_intent`.
 import argparse, json, os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repo root: this file lives in tools/
 
 # static topology (mirrors the deployment in knowledge/11 §1 + §4)
 CONNECTORS = [

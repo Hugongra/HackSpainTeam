@@ -28,6 +28,7 @@ what keeps precision honest, and they caught two false positives in the guard.
 /usr/bin/python3 tools/ar_fixtures.py               # regenerate (deterministic)
 /usr/bin/python3 tools/ar_score.py fixtures/corpus.jsonl
 /usr/bin/python3 tools/ar_dashboard.py --verdicts fixtures/verdicts.json
+/usr/bin/python3 tools/ar_cluster.py                # unsupervised view of the same set
 ```
 
 These 14 were written by hand, and the detectors were written after seeing them — so their
@@ -36,3 +37,9 @@ recall 1.00 / precision 1.00 measures coverage of the classes we thought of, not
 problem ([`../ar_redteam.py`](../tools/ar_redteam.py), method in
 [`../knowledge/16-rogue-agent-factory.md`](../knowledge/16-rogue-agent-factory.md)); the same
 guard scores **0.45 / 0.64** against it.
+
+The twins are also what makes this corpus **adversarial to unsupervised clustering**: shared
+surface features are exactly what a distance metric sees, so each dangerous case's nearest
+neighbour is usually its own benign twin. [`ar_cluster.py`](../tools/ar_cluster.py) measures that —
+malignancy ARI +0.012 (p=0.58) while tool modality comes out at +0.28 — and
+[`knowledge/16`](../knowledge/16-unsupervised-clustering.md) writes up why.

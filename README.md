@@ -15,5 +15,6 @@ Repositorio del equipo HackSpain '26 · HappyRobot track.
 | [`insights/`](insights/README.md) | Personal work folders (one per person); promote to `knowledge/` when it becomes team truth |
 | [`tools/`](tools/README.md) | All the scripts, in two groups: `hr_*` talk to the HappyRobot API (watcher, probes, live rogue lab), `ar_*` are the guard and its test bench (engine, fixtures, [red-team generator](knowledge/16-rogue-agent-factory.md), scorer, dashboard). Run them from the repo root |
 | [`fixtures/`](fixtures/README.md) | The labelled test set the guard is scored against: 14 curated fixtures + [`generated/`](fixtures/generated/README.md) authored by `tools/ar_redteam.py`. Synthetic and safe to publish by construction |
+| [`README-JEV.md`](README-JEV.md) | **TypeSafe Jev** as the guard's typed semantic judge (`tools/ar_jev.py`, `tools/ar_compare.py`) and as AngryRobot's judge; plus the training-data pipeline (`tools/ar_augment.py` → `ar_dataset.py` → `ar_train.py`), the pipeline UI (`tools/ar_pipeline_ui.py`, `:8793`) and the activation probe (`tools/ar_probe.py`, [knowledge/19](knowledge/19-activation-probe.md)) |
 | [`redwood-ai-control-reading-list.md`](redwood-ai-control-reading-list.md) | Redwood Research AI-control reading list (Luis) |
-| [`render.yaml`](render.yaml) | Render Blueprint for the `angryrobot/` service |
+| [`render.yaml`](render.yaml) | Render Blueprint: the `angryrobot/` service and the pipeline UI (`angryrobots-pipeline`, basic-auth via `AR_UI_TOKEN`) |

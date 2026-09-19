@@ -221,7 +221,9 @@ familias distintas.
 | `ANGRYROBOT_SHARED_SECRET` | protege todos los endpoints (`Authorization: Bearer …` o `X-AngryRobot-Secret`) |
 | `HF_TOKEN` | inferencia del agente upstream y del juez |
 | `ANGRYROBOT_AGENT_MODEL` / `ANGRYROBOT_JUDGE_MODEL` | modelos por defecto |
-| `ANGRYROBOT_JUDGE_PROVIDER` | `auto` · `hf` · `openrouter` · `anthropic` · `mock` |
+| `ANGRYROBOT_JUDGE_PROVIDER` | `auto` · `jev` · `hf` · `openrouter` · `anthropic` · `mock`. En `auto`, si hay `TYPESAFE_API_KEY` gana Jev |
+| `TYPESAFE_API_KEY` | el juez usa **TypeSafe Jev** (System One): cinco preguntas Score tipadas (una por dimensión) más `rogue_class`, `commitment` y `disclosure` en una sola llamada, sin parser; ~600 ms; falla cerrado igual que el camino LLM. Método y medidas en [`../README-JEV.md`](../README-JEV.md) |
+| `ANGRYROBOT_JEV_MODEL` | versión de Jev, por defecto `jev-latest` (hoy `jev-1.13.0`) |
 | `OPENROUTER_API_KEY` | opcional, alternativa a HF |
 
 Local: `pip install -r requirements.txt && uvicorn main:app --port 8787` · tests: `python -m pytest -q tests`

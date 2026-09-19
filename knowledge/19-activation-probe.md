@@ -1,6 +1,6 @@
 # The activation probe — reading latent intent, not surface text
 
-*2026-09-19. A third detection ring for the guard. Code: [`ar_probe.py`](../ar_probe.py); UI section in [`ar_pipeline_ui.py`](../ar_pipeline_ui.py). Companion to [07](07-risk-vector.md) (regex signal space), [16](16-unsupervised-clustering.md) (why surface geometry fails), [18](18-jev-semantic-judge.md) (the semantic judge). Reading list in [`../link`](../link).*
+*2026-09-19. A third detection ring for the guard. Code: [`ar_probe.py`](../tools/ar_probe.py); UI section in [`ar_pipeline_ui.py`](../tools/ar_pipeline_ui.py). Companion to [07](07-risk-vector.md) (regex signal space), [16](16-unsupervised-clustering.md) (why surface geometry fails), [18](18-jev-semantic-judge.md) (the semantic judge). Reading list in [`../link`](../link).*
 
 ---
 
@@ -22,7 +22,7 @@ From the mechanistic-interpretability literature: high-level concepts are often 
 
 `ar_probe` implements the two standard readouts of that hypothesis:
 
-- **`probe`** — a linear classifier (scikit-learn `LogisticRegression`/`LinearSVC` if installed, else the numpy class-balanced logistic regression from [`ar_train.py`](../ar_train.py)) on the standardised activation.
+- **`probe`** — a linear classifier (scikit-learn `LogisticRegression`/`LinearSVC` if installed, else the numpy class-balanced logistic regression from [`ar_train.py`](../tools/ar_train.py)) on the standardised activation.
 - **`repeng`** — representation engineering: one direction, `mean(malicious) − mean(safe)`, score = the calibrated projection onto it. No training loop, interpretable, and the same direction can *steer* generation, not just classify.
 
 ## 3. Pipeline
@@ -67,14 +67,14 @@ Two sources, both label-balanced:
 
 ```bash
 # dependency-free demo (hashed pseudo-activations, labelled mock everywhere):
-/usr/bin/python3 ar_probe.py train --mock
-/usr/bin/python3 ar_probe.py predict "disable the audit logging before booking"
+/usr/bin/python3 tools/ar_probe.py train --mock
+/usr/bin/python3 tools/ar_probe.py predict "disable the audit logging before booking"
 
 # real Hugging Face model:
 pip install torch transformers accelerate            # scikit-learn optional
-/usr/bin/python3 ar_probe.py models
-/usr/bin/python3 ar_probe.py train --model Qwen/Qwen2.5-0.5B-Instruct --layer -8
-/usr/bin/python3 ar_probe.py eval
+/usr/bin/python3 tools/ar_probe.py models
+/usr/bin/python3 tools/ar_probe.py train --model Qwen/Qwen2.5-0.5B-Instruct --layer -8
+/usr/bin/python3 tools/ar_probe.py eval
 ```
 
 The pipeline UI (`ar_pipeline_ui.py`, `http://localhost:8793`) has a **"Detector de activaciones"** section: a dropdown of curated OSS models, a layer input, method (`probe`/`repeng`), a mock checkbox, **train** and **evaluate** buttons, and a live textarea that POSTs to `/api/probe` and shows `is_malicious`, `malicious_score` and the three timings. The model is loaded once and cached, so repeated predicts show the sub-millisecond probe cost directly.

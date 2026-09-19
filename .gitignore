@@ -17,6 +17,7 @@ Thumbs.db
 dist/
 build/
 *.log
+__pycache__/
 
 # Python
 __pycache__/
@@ -32,3 +33,9 @@ explore/
 # guard output (regenerate with tools/ar_score.py)
 fixtures/verdicts.json
 fixtures/generated/verdicts.json
+# guard output (regenerate with ar_score.py / ar_cluster.py)
+fixtures/verdicts.json
+fixtures/clusters.json
+
+# generated training data (regenerate from the pipeline UI: ar_pipeline_ui.py)
+data/

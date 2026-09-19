@@ -17,3 +17,28 @@ services:
         sync: false
       - key: HAPPYROBOT_API_KEY
         sync: false
+
+  # Pipeline UI (ar_pipeline_ui.py): buttons that run the training-data and Jev
+  # scripts. Protected with HTTP Basic auth (password = AR_UI_TOKEN) because
+  # several buttons spend credits. Free plan sleeps and has no disk: data/ is
+  # rebuilt with the "Offline" chain after each deploy.
+  - type: web
+    name: angryrobots-pipeline
+    runtime: python
+    rootDir: .
+    branch: jev
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python tools/ar_pipeline_ui.py --no-open --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: AR_UI_TOKEN
+        sync: false
+      - key: TYPESAFE_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: HR_API_KEY
+        sync: false

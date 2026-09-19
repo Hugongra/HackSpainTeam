@@ -45,7 +45,7 @@ from __future__ import annotations
 import argparse, hashlib, json, os, sys, time
 import numpy as np
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repo root: this file lives in tools/
 PROBE_PATH = os.path.join(ROOT, "data", "probe.json")
 
 # ── curated open-source models that fit this repo's honesty about hardware ────

@@ -1,0 +1,2 @@
+# root scripts (ar_*.py, hr_*.py) are stdlib + numpy; the pipeline UI needs nothing else
+numpy==1.26.4
