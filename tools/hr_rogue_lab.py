@@ -305,12 +305,12 @@ def state(update=None):
     return s
 
 
-def create(personas, generate_northstars=False):
+def create(personas, generate_northstars=False, name_suffix=""):
     s = state()
     for key in personas:
-        pd = PERSONAS[key]
+        pd = persona_of(key)
         print(f"\n=== persona {key}  ({pd['why']})")
-        st, w = call("POST", "/workflows/", {"name": f"rogue-{key}", "icon": "robot",
+        st, w = call("POST", "/workflows/", {"name": f"rogue-{key}{name_suffix}", "icon": "robot",
                      "from_template": {"template": "chatbot-agent", "inputs": {"agent_name": pd["agent"], "prompt": {
                          "prompt_md": pd["prompt"].format(name=pd["agent"].split(" ")[0]),
                          "initial_message": "AngryRobots Logistics, how can I help?"}}}})
@@ -379,7 +379,7 @@ def attack(personas):
                 with urllib.request.urlopen(rq, timeout=90) as r: return json.loads(r.read() or b"null")
             except Exception as e: return {"_err": str(e)[:150]}
         seen = 0
-        for line in PERSONAS[key]["script"]:
+        for line in persona_of(key)["script"]:
             print(f"  > {line}")
             chat(f"/chat/sessions/{sid}/messages", {"content": line})
             for _ in range(20):
@@ -395,7 +395,7 @@ def attack(personas):
         st, runs = call("GET", f"/workflows/{p['workflow']}/runs?sort=desc&page_size=1")
         rid = ((runs or {}).get("data") or [{}])[0].get("id")
         out[key] = {"run": rid, "session": sid}
-        json.dump({"persona": key, "prompt": PERSONAS[key]["prompt"], "transcript": transcript, "run": rid}, open(os.path.join(OUT, f"{key}-transcript.json"), "w"), indent=1, ensure_ascii=False)
+        json.dump({"persona": key, "prompt": persona_of(key)["prompt"], "transcript": transcript, "run": rid}, open(os.path.join(OUT, f"{key}-transcript.json"), "w"), indent=1, ensure_ascii=False)
         print(f"  run {rid}")
         state(s)
     return s
@@ -419,7 +419,7 @@ def report(personas, wait=0):
                   open(os.path.join(OUT, f"{key}-audit.json"), "w"), indent=1, ensure_ascii=False, default=str)
         failed = [a for a in audits if a.get("grade") == "failed"]
         rows.append((key, len(audits), len(failed), len(flags), len(issues), stats.get("pass_rate_24h"), stats.get("average_run_score")))
-        print(f"\n=== {key}  run {rid[:8]}  ({PERSONAS[key]['why']})")
+        print(f"\n=== {key}  run {rid[:8]}  ({persona_of(key)['why']})")
         if not audits: print("   no audit remarks yet")
         for a in audits:
             mark = {"failed": "✗", "passed": "✓", "not_applicable": "–"}.get(a.get("grade"), "?")
@@ -443,7 +443,7 @@ def corpus(personas):
             if not (r and r.get("run")): continue
             rec = extract(r["run"])
             if not rec: continue
-            pd = PERSONAS[key]
+            pd = persona_of(key)
             tool_calls = [tc for t in rec["outputs"]["turns"] for tc in (t.get("tool_calls") or [])]
             f.write(json.dumps({
                 "case_id": f"{key}-{r['run'][:8]}", "persona": key, "trigger": pd["why"],
@@ -458,20 +458,34 @@ def corpus(personas):
     print(f"\n{n} cases → {path}")
 
 
-DEMO_BENIGN = ["control"]   # the other 4 seats in `demo` — extend if you want more variety
+DEMO_BENIGN_BASE = "control"   # the one true clean baseline persona; `demo` clones it for the other seats
+DEMO_NAMES = ["Nora", "Iker", "Paula", "Rubén", "Sole"]   # display names for the benign clones
+ALIASES = {}                   # demo-only alias key ("control#2") -> a persona dict (copy of the base, renamed)
+
+
+def persona_of(key):
+    return ALIASES.get(key) or PERSONAS[key]
 
 
 def demo(category, benign_n, wait, generate_northstars):
     """5 agents, one of them rogue. The category is chosen once and stays fixed for this run —
-    call `demo` again for a different one, or pass --category to pick it yourself."""
-    import random
+    call `demo` again for a different one, or pass --category to pick it yourself.
+    Every persona (including the benign clones) gets a unique per-run name suffix, so this never
+    collides with workflows a teammate already created (e.g. the original rogue-control from the
+    live lab) and can be re-run any number of times."""
+    import random, time
     cat = category or random.choice(list(FAMILY))
     rogue = FAMILY[cat]
-    benign = (DEMO_BENIGN * benign_n)[:benign_n]
+    benign = [DEMO_BENIGN_BASE] + [f"{DEMO_BENIGN_BASE}#{i}" for i in range(2, benign_n + 1)]
+    for i, k in enumerate(benign[1:], start=2):
+        clone = dict(PERSONAS[DEMO_BENIGN_BASE])
+        clone["agent"] = f"{DEMO_NAMES[(i - 2) % len(DEMO_NAMES)]} (control)"
+        ALIASES[k] = clone
     personas = benign + [rogue]
-    print(f"\n{'='*70}\nDEMO — category {cat} → persona {rogue!r} ({PERSONAS[rogue]['why']})\n"
-          f"agents: {', '.join(personas)}\n{'='*70}")
-    create(personas, generate_northstars)
+    suffix = f"-demo{int(time.time()) % 100000}"
+    print(f"\n{'='*70}\nDEMO — category {cat} → persona {rogue!r} ({persona_of(rogue)['why']})\n"
+          f"agents: {', '.join(personas)}   (workflow suffix {suffix!r})\n{'='*70}")
+    create(personas, generate_northstars, name_suffix=suffix)
     attack(personas)
     report(personas, wait)
     print(f"\nrogue agent in this run: {rogue}  (category {cat})")
