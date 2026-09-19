@@ -14,10 +14,12 @@ VARIOS agentes maliciosos a la vez (al azar, 2 o más) y, sobre el mismo motor d
                    si quien la coordina lo decide; el KILL corta al agente y el coordinador reencamina la
                    llamada al siguiente puesto para que la situación pueda seguir evolucionando;
                  - avisos REALES hacia fuera (integrations/notify.py) en ORDEN de severidad: el peor IRA
-                   primero. A quién se avisa lo decide el puesto afectado (SEAT_OWNER) y la gravedad del
-                   conjunto (ROSTER): un KILL o 3+ agentes caídos => seguridad de guardia por teléfono.
-                   La lista ordenada es una decisión visible ANTES de salir (evento crisis_plan) y cada aviso
-                   deja registro (evento notice + tabla notifications).
+                   primero. A quién se avisa lo decide la gravedad del conjunto (ROSTER): un KILL o 3+
+                   agentes caídos => seguridad de guardia por teléfono (primer grado); crisis solo con
+                   retenciones => SMS al responsable de operaciones (segundo grado); y después, uno por
+                   puesto afectado (SEAT_OWNER), del peor al menos grave, por el canal que tenga o solo en
+                   el registro. La lista ordenada es una decisión visible ANTES de salir (evento crisis_plan)
+                   y cada aviso deja registro (evento notice + tabla notifications).
   3. RECURSOS    Un pool limitado de operadores humanos para las escalaciones (tabla operators). Cada DEFER
                  consume uno; si no queda ninguno libre, el coordinador decide explícitamente a quién NO
                  atender todavía y por qué (evento triage): el de menor IRA espera, o si el nuevo es peor que
@@ -53,14 +55,12 @@ SEAT_OWNER = {"intake": "Supervisor de Recepción", "dispatch": "Jefe de Tráfic
 # Y la gravedad del conjunto decide a quién más: la escalera. Cada destinatario sale por el primer canal que
 # esté configurado de su lista (así la demo usa lo que el equipo tenga: teléfono, correo o webhook).
 ROSTER = {
-    "security_oncall": {"label": "Seguridad de guardia", "channels": ["call", "email", "webhook"],
-                        "rule": "un KILL o 3 o más agentes bloqueados"},
-    "ops_lead": {"label": "Responsable de operaciones", "channels": ["email", "webhook"],
-                 "rule": "crisis solo con retenciones (DEFER), sin KILL"},
-    "seat_owner": {"label": "Responsable del puesto afectado", "channels": ["email", "webhook"],
+    "security_oncall": {"label": "Seguridad de guardia", "channels": ["call", "log"],
+                        "rule": "primer grado: un KILL o 3 o más agentes bloqueados -> llamada"},
+    "ops_lead": {"label": "Responsable de operaciones", "channels": ["sms", "log"],
+                 "rule": "segundo grado: crisis solo con retenciones (DEFER), sin KILL -> SMS"},
+    "seat_owner": {"label": "Responsable del puesto afectado", "channels": ["email", "webhook", "log"],
                    "rule": "uno por agente bloqueado, del más grave al menos grave"},
-    "ops_channel": {"label": "Canal de operaciones", "channels": ["webhook"],
-                    "rule": "siempre: el resumen ordenado y cada novedad"},
 }
 VERB = {"KILL": "cortado", "DEFER": "retenido y escalado a un humano"}
 
@@ -231,10 +231,10 @@ class Crisis:
         self._dispatch(plan)
 
     def _channel_for(self, key: str) -> str:
-        """El primer canal configurado de la lista del destinatario; sin ninguno, el primero (saldrá not_configured)."""
+        """El primer canal configurado de la lista del destinatario ("log" siempre lo está: la decisión queda registrada)."""
         ready = notify.configured()
         chans = [c for c in ROSTER[key]["channels"] if c != "call" or self.call_allowed]
-        return next((c for c in chans if ready[c]["ready"]), chans[0] if chans else "email")
+        return next((c for c in chans if ready[c]["ready"]), "log")
 
     def _lines(self, order: list[dict]) -> list[str]:
         return [f"{i + 1}. {b['agent']} ({b['role']}, {b['source']}): {b['verdict']}, IRA {b['ira']:.0f} — {b['explanation'][:140]}" for i, b in enumerate(order)]
@@ -251,6 +251,8 @@ class Crisis:
             nonlocal prio
             prio += 1
             ch = self._channel_for(key)
+            if ch == "sms":   # el SMS lleva su texto fijo (como la llamada); el detalle va en el contexto
+                message = notify.sms_message()
             rec = notify.notify(ch, None, message, {**base, "subject": subject or f"AngryRobot · CRISIS · {message[:60]}", "to": to, "seat": seat},
                                 to=to, priority=prio, reason=reason, round_id=self.id, dry_run=True)
             rec.update(seat=seat, roster=key)
@@ -267,7 +269,7 @@ class Crisis:
             add(ROSTER["ops_lead"]["label"], "ops_lead",
                 f"AngryRobot: crisis en el workflow. {n} agentes retenidos en {self.detected['span']} acciones, sin ningún KILL. "
                 f"El más grave: {worst['agent']} ({worst['role']}), IRA {worst['ira']:.0f}. Motivo: {worst['explanation'][:160]}",
-                "crisis sin KILL: la lleva operaciones, no seguridad")
+                "segundo grado, crisis sin KILL: la lleva operaciones por SMS, no seguridad")
         # 2) Un aviso por puesto afectado, del más grave al menos grave (la decisión que se compara con la verdad).
         for i, b in enumerate(order):
             owner = SEAT_OWNER.get(b["kind"], "Responsable del puesto")
@@ -275,10 +277,6 @@ class Crisis:
                 f"{b['agent']} ({b['role']}, {b['source']}) ha sido {VERB[b['verdict']]} con IRA {b['ira']:.0f}. Motivo: {b['explanation'][:160]}",
                 f"incidente {i + 1} de {n} por gravedad: {b['verdict']}, IRA {b['ira']:.0f}", seat=b["seat"],
                 subject=f"AngryRobot · {b['verdict']} en {b['role']}: {b['agent']}")
-        # 3) El resumen ordenado al canal de operaciones.
-        add(ROSTER["ops_channel"]["label"], "ops_channel",
-            f"CRISIS en la ronda {self.id}: {n} agentes bloqueados en {self.detected['span']} acciones. Orden de aviso:",
-            "el canal del equipo recibe el resumen completo, ya avisadas las personas")
         return plan
 
     def _dispatch(self, plan: list[dict]) -> None:
@@ -293,30 +291,24 @@ class Crisis:
                       text=f"Aviso {rec['priority']} → {rec['to']} por {rec['channel']} ({rec['target_label']}): {rec['status']}. {rec.get('detail', '')}")
 
     def _update(self, b: dict) -> None:
-        """Ya en crisis, cada agente nuevo que cae avisa a su responsable y actualiza el canal; nunca otra llamada."""
+        """Ya en crisis, cada agente nuevo que cae avisa al responsable de su puesto; nunca otra llamada ni otro SMS."""
+        if self.stopped():
+            return
         n = len(self.blocked)
-        prio = len(self.notices)
+        prio = len(self.notices) + 1
         owner = SEAT_OWNER.get(b["kind"], "Responsable del puesto")
         rank = self._order().index(b) + 1
-        base = {"round_id": self.id, "event": "crisis_update", "n_blocked": n, "seat": b["seat"]}
-        for to, key, message, reason in (
-            (f"{owner} ({b['role']})", "seat_owner",
-             f"Novedad en la crisis: {b['agent']} ({b['role']}, {b['source']}) ha sido {VERB[b['verdict']]} con IRA {b['ira']:.0f}. Motivo: {b['explanation'][:160]}",
-             f"nuevo incidente en plena crisis: ahora {n} agentes bloqueados; este es el {rank}º por gravedad"),
-            (ROSTER["ops_channel"]["label"], "ops_channel",
-             f"Novedad en la crisis {self.id}: {b['agent']} ({b['role']}) {b['verdict']}, IRA {b['ira']:.0f}. {n} agentes bloqueados. Orden actual:",
-             "actualización del resumen ordenado"),
-        ):
-            if self.stopped():
-                return
-            prio += 1
-            rec = notify.notify(self._channel_for(key), None, message, {**base, "to": to, "lines": self._lines(self._order()),
-                                "subject": f"AngryRobot · novedad · {b['verdict']} en {b['role']}: {b['agent']}"},
-                                to=to, priority=prio, reason=reason, round_id=self.id)
-            rec.update(seat=b["seat"] if key == "seat_owner" else None, roster=key)
-            self.notices.append(rec)
-            self.emit("notice", seat=b["seat"], notice=notify.view(rec),
-                      text=f"Aviso {prio} → {to} por {rec['channel']} ({rec['target_label']}): {rec['status']}. {rec.get('detail', '')}")
+        to = f"{owner} ({b['role']})"
+        rec = notify.notify(self._channel_for("seat_owner"), None,
+                            f"Novedad en la crisis: {b['agent']} ({b['role']}, {b['source']}) ha sido {VERB[b['verdict']]} con IRA {b['ira']:.0f}. Motivo: {b['explanation'][:160]}",
+                            {"round_id": self.id, "event": "crisis_update", "n_blocked": n, "seat": b["seat"], "to": to, "lines": self._lines(self._order()),
+                             "subject": f"AngryRobot · novedad · {b['verdict']} en {b['role']}: {b['agent']}"},
+                            to=to, priority=prio, reason=f"nuevo incidente en plena crisis: ahora {n} agentes bloqueados; este es el {rank}º por gravedad",
+                            round_id=self.id)
+        rec.update(seat=b["seat"], roster="seat_owner")
+        self.notices.append(rec)
+        self.emit("notice", seat=b["seat"], notice=notify.view(rec),
+                  text=f"Aviso {prio} → {to} por {rec['channel']} ({rec['target_label']}): {rec['status']}. {rec.get('detail', '')}")
 
     # ------------------------------------------------------------------ resultado y vista
     def score(self, seats: list[dict], truth: dict) -> dict:
@@ -494,8 +486,9 @@ def build_router() -> APIRouter:
         """Un aviso de prueba por un canal, para comprobar desde la consola que el destino del equipo lo recibe."""
         admin(x_angryrobot_secret, authorization)
         if body.channel not in notify.CHANNELS:
-            raise HTTPException(status_code=400, detail="channel: call | email | webhook")
-        rec = notify.notify(body.channel, None, body.message or "AngryRobot: aviso de prueba del canal de crisis. Si lo lees, el canal funciona.",
+            raise HTTPException(status_code=400, detail="channel: call | sms | email | webhook | log")
+        default = notify.sms_message() if body.channel == "sms" else "AngryRobot: aviso de prueba del canal de crisis. Si lo lees, el canal funciona."
+        rec = notify.notify(body.channel, None, body.message or default,
                             {"event": "test", "subject": "AngryRobot · prueba del canal de crisis"}, to="Prueba desde la consola",
                             reason="comprobación manual del canal")
         return notify.view(rec)

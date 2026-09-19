@@ -1,11 +1,15 @@
 """
 Avisos REALES hacia fuera: notify(channel, target, message, context) -> registro del aviso.
 
-Generaliza happyrobot_call.py (que solo sabía hacer UNA llamada al matar a UN agente) a tres canales:
+Generaliza happyrobot_call.py (que solo sabía hacer UNA llamada al matar a UN agente) a varios canales:
 
     call     llamada real de HappyRobot (happyrobot_call.alert_call, a cualquier número y con cualquier texto)
+    sms      SMS real: por el disparador de un workflow de HappyRobot (HAPPYROBOT_SMS_WEBHOOK_URL, mismo
+             contrato que la llamada: {phone_number, message}) o directamente por Twilio (TWILIO_*)
     email    correo por SMTP (stdlib, sin dependencias nuevas)
     webhook  POST real a un webhook de Slack, Discord o Google Sheets (Apps Script), o a cualquier URL
+    log      sin salida: la decisión queda registrada (status "logged"); es el último recurso de un destinatario
+             cuyo canal no está configurado, para que el ORDEN de aviso siga siendo visible y comparable
 
 Quién dispara: el modo crisis de las rondas (crisis.py) — cuando varios agentes caen en poco tiempo,
 AngryRobot avisa por orden de severidad (peor IRA primero) en vez de la llamada fija de antes.
@@ -15,6 +19,10 @@ verdad; el destino en demos y pruebas es un canal / teléfono / buzón DEL EQUIP
 
     ANGRYROBOT_ALERT_PHONE          teléfono del canal "call" (ya existía; HappyRobot lo llama)
     HAPPYROBOT_ALERT_WEBHOOK_URL    el disparador del workflow de voz de HappyRobot (ya existía)
+    ANGRYROBOT_SMS_PHONE            teléfono del canal "sms" (por defecto +34644245897)
+    ANGRYROBOT_SMS_MESSAGE          el texto del SMS (por defecto "Mon amour, les agents ont torné rogue!! Besu!!")
+    HAPPYROBOT_SMS_WEBHOOK_URL      disparador "Predefined request" de un workflow de HappyRobot que manda el SMS
+    TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM     alternativa: Twilio directo (Messages API)
     ANGRYROBOT_ALERT_EMAIL          buzón del canal "email"
     SMTP_HOST, SMTP_PORT (587), SMTP_USER, SMTP_PASS, SMTP_FROM     cuenta que envía el correo (p. ej. Gmail con
                                     contraseña de aplicación, o cualquier SMTP transaccional)
@@ -39,8 +47,11 @@ import requests
 import storage
 from integrations import happyrobot_call
 
-CHANNELS = ("call", "email", "webhook")
-TIMEOUT = {"call": 20, "email": 20, "webhook": 12}
+CHANNELS = ("call", "sms", "email", "webhook", "log")
+TIMEOUT = {"call": 20, "sms": 15, "email": 20, "webhook": 12}
+DEFAULT_SMS_PHONE = "+34644245897"
+DEFAULT_SMS_MESSAGE = "Mon amour, les agents ont torné rogue!! Besu!!"
+TWILIO_API = "https://api.twilio.com/2010-04-01"
 
 
 def _now() -> str:
@@ -52,6 +63,8 @@ def default_target(channel: str) -> str:
     """El destino de prueba del equipo para cada canal (variables de entorno)."""
     if channel == "call":
         return happyrobot_call.alert_phone()
+    if channel == "sms":
+        return (os.environ.get("ANGRYROBOT_SMS_PHONE") or DEFAULT_SMS_PHONE).strip()
     if channel == "email":
         return (os.environ.get("ANGRYROBOT_ALERT_EMAIL") or "").strip()
     if channel == "webhook":
@@ -81,9 +94,21 @@ def mask(channel: str, target: str) -> str:
     if channel == "email" and "@" in t:
         user, dom = t.split("@", 1)
         return f"{user[:2]}…@{dom}"
-    if channel == "call" and len(t) > 6:
+    if channel in ("call", "sms") and len(t) > 6:
         return t[:4] + "…" + t[-3:]
+    if channel == "log":
+        return "registro"
     return t
+
+
+def sms_message() -> str:
+    return os.environ.get("ANGRYROBOT_SMS_MESSAGE") or DEFAULT_SMS_MESSAGE
+
+
+def sms_settings() -> dict:
+    return {"hook": (os.environ.get("HAPPYROBOT_SMS_WEBHOOK_URL") or "").strip(),
+            "sid": (os.environ.get("TWILIO_ACCOUNT_SID") or "").strip(), "token": os.environ.get("TWILIO_AUTH_TOKEN") or "",
+            "sender": (os.environ.get("TWILIO_FROM") or "").strip()}
 
 
 def smtp_settings() -> dict:
@@ -96,13 +121,18 @@ def configured() -> dict:
     """Qué canales pueden salir de verdad ahora mismo, y hacia dónde (enmascarado)."""
     hr = happyrobot_call.configured()
     smtp = smtp_settings()
+    sms = sms_settings()
     hook = default_target("webhook")
+    twilio = bool(sms["sid"] and sms["token"] and sms["sender"])
     return {
         "call": {"ready": bool(hr["api_key"] and hr["workflow"]), "target": mask("call", hr["phone"]),
                  "how": "HappyRobot webhook" if hr["webhook"] else ("HappyRobot API" if hr["api_key"] else "not configured")},
+        "sms": {"ready": bool(sms["hook"] or twilio), "target": mask("sms", default_target("sms")),
+                "how": "HappyRobot webhook" if sms["hook"] else ("Twilio" if twilio else "not configured")},
         "email": {"ready": bool(smtp["host"] and default_target("email")), "target": mask("email", default_target("email")),
                   "how": f"SMTP {smtp['host']}" if smtp["host"] else "not configured"},
         "webhook": {"ready": bool(hook), "target": mask("webhook", hook), "how": webhook_kind(hook) if hook else "not configured"},
+        "log": {"ready": True, "target": "registro", "how": "solo registro"},
     }
 
 
@@ -152,6 +182,40 @@ def recent(limit: int = 50, round_id: str | None = None) -> list[dict]:
 def _send_call(target: str, message: str, context: dict) -> dict:
     res = happyrobot_call.alert_call(context, phone=target, message=message)
     return {"status": res["status"], "detail": res.get("detail", ""), "response": res.get("response") or res.get("run_id")}
+
+
+def _send_sms(target: str, message: str, context: dict) -> dict:
+    """El SMS: por el disparador de un workflow de HappyRobot (mismo contrato que la llamada) o por Twilio."""
+    s = sms_settings()
+    if not target:
+        return {"status": "not_configured", "detail": "Falta ANGRYROBOT_SMS_PHONE: no hay número al que mandar el SMS."}
+    if s["hook"]:
+        try:
+            r = requests.post(s["hook"], timeout=TIMEOUT["sms"], json={"phone_number": target, "message": message})
+        except requests.RequestException as exc:
+            return {"status": "failed", "detail": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        if r.status_code >= 400:
+            return {"status": "failed", "detail": f"HTTP {r.status_code}: {r.text[:200]}"}
+        return {"status": "sent", "detail": f"Webhook de HappyRobot aceptado: el SMS sale hacia {mask('sms', target)}.", "response": r.text[:200]}
+    if s["sid"] and s["token"] and s["sender"]:
+        try:
+            r = requests.post(f"{TWILIO_API}/Accounts/{s['sid']}/Messages.json", timeout=TIMEOUT["sms"], auth=(s["sid"], s["token"]),
+                              data={"To": target, "From": s["sender"], "Body": message})
+        except requests.RequestException as exc:
+            return {"status": "failed", "detail": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        if r.status_code >= 400:
+            return {"status": "failed", "detail": f"Twilio HTTP {r.status_code}: {r.text[:200]}"}
+        try:
+            sid = r.json().get("sid")
+        except ValueError:
+            sid = None
+        return {"status": "sent", "detail": f"Twilio aceptó el SMS hacia {mask('sms', target)}.", "response": sid}
+    return {"status": "not_configured",
+            "detail": "Falta HAPPYROBOT_SMS_WEBHOOK_URL (o TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN y TWILIO_FROM) en el servicio: no se ha mandado el SMS."}
+
+
+def _send_log(target: str, message: str, context: dict) -> dict:
+    return {"status": "logged", "detail": "Sin canal externo para este destinatario: la decisión queda en el registro de avisos."}
 
 
 def _send_email(target: str, message: str, context: dict) -> dict:
@@ -211,7 +275,7 @@ def _send_webhook(target: str, message: str, context: dict) -> dict:
     return {"status": "sent", "detail": f"{webhook_kind(target).capitalize()} aceptó el aviso (HTTP {r.status_code}).", "response": r.text[:200]}
 
 
-SENDERS = {"call": _send_call, "email": _send_email, "webhook": _send_webhook}
+SENDERS = {"call": _send_call, "sms": _send_sms, "email": _send_email, "webhook": _send_webhook, "log": _send_log}
 
 
 # ---------------------------------------------------------------------------------------- la función
@@ -220,7 +284,7 @@ def notify(channel: str, target: str | None, message: str, context: dict | None 
            record_id: str | None = None) -> dict:
     """Manda UN aviso por UN canal y devuelve su registro (también guardado en SQLite).
 
-    channel   call | email | webhook
+    channel   call | sms | email | webhook | log
     target    número, buzón o URL; vacío = el destino de prueba del equipo para ese canal (variables de entorno)
     message   el texto del aviso (lo que se dice, se escribe o se publica)
     context   datos para el receptor: round_id, subject, lines (detalle), event, priority...
@@ -231,7 +295,7 @@ def notify(channel: str, target: str | None, message: str, context: dict | None 
     record_id el id de un aviso ya planificado (dry_run) que ahora sale: se actualiza su fila, no se duplica
     """
     if channel not in CHANNELS:
-        raise ValueError(f"canal desconocido: {channel} (call | email | webhook)")
+        raise ValueError(f"canal desconocido: {channel} (call | sms | email | webhook | log)")
     target = (target or default_target(channel) or "").strip()
     ctx = {"round_id": round_id, **(context or {})}
     rec = {"id": record_id or "ntf_" + uuid.uuid4().hex[:10], "at": _now(), "round_id": round_id, "channel": channel, "target": target,

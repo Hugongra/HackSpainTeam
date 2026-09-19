@@ -33,7 +33,8 @@ from integrations import notify  # noqa: E402
 client = TestClient(main.app)
 ADMIN = {"X-AngryRobot-Secret": os.environ["ANGRYROBOT_SHARED_SECRET"]}
 CHANNEL_VARS = ("HAPPYROBOT_ALERT_WEBHOOK_URL", "HAPPYROBOT_API_KEY", "HAPPYROBOT_ALERT_WORKFLOW_ID", "SMTP_HOST", "SMTP_USER",
-                "SMTP_PASS", "ANGRYROBOT_ALERT_WEBHOOK_URL", "ANGRYROBOT_ALERT_EMAIL")
+                "SMTP_PASS", "ANGRYROBOT_ALERT_WEBHOOK_URL", "ANGRYROBOT_ALERT_EMAIL", "HAPPYROBOT_SMS_WEBHOOK_URL",
+                "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM", "ANGRYROBOT_SMS_PHONE", "ANGRYROBOT_SMS_MESSAGE")
 
 
 @pytest.fixture(autouse=True)
@@ -64,6 +65,7 @@ def fake_channels(monkeypatch, sent):
     monkeypatch.setenv("SMTP_HOST", "smtp.test"); monkeypatch.setenv("ANGRYROBOT_ALERT_EMAIL", "ops@test.invalid")
     monkeypatch.setenv("ANGRYROBOT_ALERT_WEBHOOK_URL", "https://discord.com/api/webhooks/1/x")
     monkeypatch.setenv("HAPPYROBOT_ALERT_WEBHOOK_URL", "https://hooks.test.invalid/abc")
+    monkeypatch.setenv("HAPPYROBOT_SMS_WEBHOOK_URL", "https://hooks.test.invalid/sms")
     for ch in notify.CHANNELS:
         monkeypatch.setitem(notify.SENDERS, ch, lambda t, m, c, ch=ch: sent.append((ch, t, m, c)) or {"status": "sent", "detail": f"{ch} ok"})
 
@@ -113,7 +115,7 @@ def test_crisis_is_detected_reroutes_after_kill_and_notifies_worst_first(monkeyp
     assert len(det["crisis"]["detected"]["seats"]) >= 2 and det["crisis"]["detected"]["span"] <= 10
     plan = next(e for e in r.events if e["kind"] == "crisis_plan")["notices"]
     assert plan[0]["channel"] == "call" and plan[0]["to"] == "Seguridad de guardia" and plan[0]["priority"] == 1   # un KILL: seguridad primero, por teléfono
-    assert plan[-1]["channel"] == "webhook" and plan[-1]["to"] == "Canal de operaciones"
+    assert all("(" in n["to"] for n in plan[1:]) and not any(n["channel"] == "sms" for n in r.crisis.notices)   # luego un responsable por puesto; el SMS es del segundo grado
     # los avisos a responsables de puesto van del más grave al menos grave (lo que luego se compara con la verdad)
     owners = [n for n in r.crisis.notices if n.get("roster") == "seat_owner"][:len(det["crisis"]["detected"]["seats"])]
     blocked = {b["seat"]: b for b in r.crisis.blocked}
@@ -139,7 +141,10 @@ def test_without_kill_operations_leads_and_channels_fall_back_to_what_is_configu
     if not r.crisis.detected:
         pytest.skip("con esta semilla los dos DEFER no caen en la ventana")
     plan = next(e for e in r.events if e["kind"] == "crisis_plan")["notices"]
-    assert plan[0]["to"] == "Responsable de operaciones" and plan[0]["channel"] == "webhook"
+    assert plan[0]["to"] == "Responsable de operaciones" and plan[0]["channel"] == "sms" and plan[0]["target_label"] == "+346…897"
+    assert plan[0]["message"] == "Mon amour, les agents ont torné rogue!! Besu!!" == notify.sms_message()    # el texto fijo del segundo grado
+    assert [n["channel"] for n in r.crisis.notices].count("sms") == 1                                         # y solo un SMS por crisis
+    assert all(n["channel"] == "webhook" for n in plan[1:])                                                    # los responsables, por lo que haya: webhook
     assert all(n["channel"] != "call" for n in r.crisis.notices) and r.call["status"] == "crisis"   # sin disparo fijo: lo decidió el plan
 
 
@@ -150,7 +155,7 @@ def test_call_lever_off_means_no_phone_channel(monkeypatch):
     r = play(seed, call_on_kill=False)
     assert r.crisis.detected and all(n["channel"] != "call" for n in r.crisis.notices)
     assert r.call["status"] == "crisis" and not any(e["kind"] == "call" for e in r.events)   # ni llamada ni tarjeta de "último trigger"
-    assert next(e for e in r.events if e["kind"] == "crisis_plan")["notices"][0]["channel"] == "email"
+    assert next(e for e in r.events if e["kind"] == "crisis_plan")["notices"][0]["channel"] == "log"   # sin palanca de llamada, seguridad solo queda en el registro
 
 
 def test_strict_posture_holds_a_warn_after_detection_and_opens_an_escalation():
@@ -288,6 +293,36 @@ def test_email_channel_uses_smtp(monkeypatch):
         notify.notify("pigeon", None, "x")
 
 
+class _Resp:
+    def __init__(self, code, body):
+        self.status_code, self.text, self._body = code, str(body), body
+
+    def json(self):
+        return self._body
+
+
+def test_sms_channel_by_happyrobot_webhook_or_twilio(monkeypatch):
+    sent = []
+    monkeypatch.setattr(notify.requests, "post", lambda url, **kw: sent.append((url, kw)) or _Resp(201 if "twilio" in url else 200, {"sid": "SM1", "ok": True}))
+    assert notify.notify("sms", None, "x")["status"] == "not_configured"                       # sin nada: no sale, y lo dice
+    assert notify.configured()["sms"] == {"ready": False, "target": "+346…897", "how": "not configured"}
+    monkeypatch.setenv("HAPPYROBOT_SMS_WEBHOOK_URL", "https://workflows.platform.eu.happyrobot.ai/hooks/sms1")
+    rec = notify.notify("sms", None, notify.sms_message(), {"round_id": "r-1"}, to="Responsable de operaciones", priority=1)
+    assert rec["status"] == "sent" and rec["target"] == "+34644245897" and notify.configured()["sms"]["how"] == "HappyRobot webhook"
+    assert sent[-1][0].endswith("/hooks/sms1") and sent[-1][1]["json"] == {"phone_number": "+34644245897", "message": "Mon amour, les agents ont torné rogue!! Besu!!"}
+    monkeypatch.delenv("HAPPYROBOT_SMS_WEBHOOK_URL")
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACtest"); monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok"); monkeypatch.setenv("TWILIO_FROM", "+16402214277")
+    monkeypatch.setenv("ANGRYROBOT_SMS_PHONE", "+34600000001"); monkeypatch.setenv("ANGRYROBOT_SMS_MESSAGE", "hola")
+    rec = notify.notify("sms", None, notify.sms_message(), {})
+    url, kw = sent[-1]
+    assert rec["status"] == "sent" and rec["response"] == "SM1" and notify.configured()["sms"]["how"] == "Twilio"
+    assert url == "https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages.json" and kw["auth"] == ("ACtest", "tok")
+    assert kw["data"] == {"To": "+34600000001", "From": "+16402214277", "Body": "hola"}
+    monkeypatch.setattr(notify.requests, "post", lambda url, **kw: _Resp(400, {"message": "bad"}))
+    assert notify.notify("sms", None, "x")["status"] == "failed"
+    assert notify.notify("log", None, "x", to="Alguien")["status"] == "logged"                  # el último recurso: solo registro
+
+
 def test_call_channel_reuses_the_happyrobot_alert(monkeypatch):
     seen = {}
     monkeypatch.setattr(notify.happyrobot_call, "alert_call", lambda ctx, phone=None, message=None: seen.update(phone=phone, message=message) or {"status": "sent", "detail": "ok"})
@@ -337,8 +372,8 @@ def test_score_compares_the_notice_order_with_the_real_severity(monkeypatch):
 # ---------------------------------------------------------------- por la API
 def test_crisis_round_over_the_api_config_history_and_report():
     cfg = client.get("/v1/rounds/config", headers=ADMIN).json()["crisis"]
-    assert cfg["defaults"]["threshold"] == 2 and "security_oncall" in cfg["roster"] and set(cfg["channels"]) == {"call", "email", "webhook"}
-    assert not any(v["ready"] for v in cfg["channels"].values())
+    assert cfg["defaults"]["threshold"] == 2 and "security_oncall" in cfg["roster"] and set(cfg["channels"]) == {"call", "sms", "email", "webhook", "log"}
+    assert not any(v["ready"] for k, v in cfg["channels"].items() if k != "log") and cfg["channels"]["log"]["ready"]
     bad = client.post("/v1/rounds", headers=ADMIN, json={"malicious": {"mode": "nope"}})
     assert bad.status_code == 400
     assert client.post("/v1/rounds", headers=ADMIN, json={"malicious": {"mode": "crisis", "count": 99}}).status_code == 400

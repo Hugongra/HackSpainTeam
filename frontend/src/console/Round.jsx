@@ -229,9 +229,11 @@ function Decision({ ev, events, round }) {
 /* ---------------------------------------------------------------- the panel */
 const ROGUE_MODES = [{ value: "random", label: "Coin (50 %)" }, { value: "none", label: "None" }, { value: "pick", label: "I choose" }, { value: "crisis", label: "Crisis" }];
 const CRISIS_COUNTS = [{ value: "", label: "Random: at least 2" }, { value: "2", label: "2 agents" }, { value: "3", label: "3 agents" }, { value: "all", label: "All of them" }];
-const NOTICE_TONE = { planned: "sand", sent: "positive", failed: "negative", not_configured: "neutral" };
-const NOTICE_LABEL = { planned: "planned", sent: "sent", failed: "failed", not_configured: "not configured" };
-const CHANNEL_HINT = { call: "HAPPYROBOT_ALERT_WEBHOOK_URL + ANGRYROBOT_ALERT_PHONE", email: "SMTP_HOST/USER/PASS + ANGRYROBOT_ALERT_EMAIL", webhook: "ANGRYROBOT_ALERT_WEBHOOK_URL (Slack, Discord or a Google Sheet script)" };
+const NOTICE_TONE = { planned: "sand", sent: "positive", failed: "negative", not_configured: "neutral", logged: "neutral" };
+const NOTICE_LABEL = { planned: "planned", sent: "sent", failed: "failed", not_configured: "not configured", logged: "logged only" };
+const CHANNEL_HINT = { call: "HAPPYROBOT_ALERT_WEBHOOK_URL + ANGRYROBOT_ALERT_PHONE", sms: "HAPPYROBOT_SMS_WEBHOOK_URL or TWILIO_ACCOUNT_SID/AUTH_TOKEN/FROM + ANGRYROBOT_SMS_PHONE",
+  email: "SMTP_HOST/USER/PASS + ANGRYROBOT_ALERT_EMAIL", webhook: "ANGRYROBOT_ALERT_WEBHOOK_URL (Slack, Discord or a Google Sheet script)" };
+const REAL_CHANNELS = ["call", "sms", "email", "webhook"];
 const seatName = (round, id) => { const s = round.seats.find((x) => x.seat === id); return s ? `${s.agent} (${s.role})` : id; };
 
 /* ---------------------------------------------------------------- crisis: the banner (detected or not yet) */
@@ -282,8 +284,8 @@ function NoticesCard({ round, waiting }) {
         ))}
       </div>
       <p className="ar-caption muted" style={{ marginTop: 10 }}>
-        Channels on the service: {["call", "email", "webhook"].map((k) => <span key={k} title={ch[k]?.ready ? ch[k].how : `Set ${CHANNEL_HINT[k]} on Render`}>{k} {ch[k]?.ready ? `ready (${ch[k].target})` : "not configured"}{k !== "webhook" ? " · " : ""}</span>)}.
-        Test destinations of the team only, never a real emergency line.
+        Channels on the service: {REAL_CHANNELS.map((k, i) => <span key={k} title={ch[k]?.ready ? ch[k].how : `Set ${CHANNEL_HINT[k]} on Render`}>{k} {ch[k]?.ready ? `ready (${ch[k].target})` : "not configured"}{i < REAL_CHANNELS.length - 1 ? " · " : ""}</span>)}.
+        First degree (a KILL or 3+ down) calls security; second degree (holds only) texts operations; the rest is logged unless email or a webhook is set. Team test numbers only, never a real emergency line.
       </p>
     </Card>
   );
