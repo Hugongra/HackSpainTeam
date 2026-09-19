@@ -4,6 +4,10 @@ Shared, published research for the team. Everything here is a **living document*
 
 ## Read in this order
 
+Grouped so a newcomer can stop after section 1 (problem), skim section 2 (our design), or jump straight to section 3 (what's actually built and running).
+
+### 1. Research & landscape — why this problem, what already exists
+
 | # | Doc | What it answers | Status |
 |---|---|---|---|
 | 01 | [HappyRobot watcher & API](01-happyrobot-watcher-and-api.md) | How we get data out of HappyRobot: access model, object tree, the 7 transports, and the full **action surface** (what an agent can do, Tier 0–3) | ✅ researched from the public spec; needs a key to verify the realtime WS host |
@@ -11,18 +15,28 @@ Shared, published research for the team. Everything here is a **living document*
 | 03 | [Rogue AI incidents map](03-rogue-ai-incidents-map.md) | 2024–26 incidents (destructive actions, hijacks, misalignment evals, containment breaches), cross-cutting patterns, existing escalation frameworks, implications | ✅ |
 | 04 | [AI auditing OSS landscape](04-ai-auditing-oss-landscape.md) | Which companies/labs ship open-source auditing frameworks, grouped by incident type; the voice-agent gap | ✅ |
 | 05 | [Escalation framework literature](05-escalation-framework-literature.md) | Is there consensus? The three lineages (AI Control, runtime enforcement, governance) with the papers and diagrams to build on | ✅ |
+
+### 2. Our framework — the design
+
+| # | Doc | What it answers | Status |
+|---|---|---|---|
 | 06 | [Framework v0](06-framework-v0.md) | Our escalation framework: principles, objects, hard triggers, judge, S0–S4 ladder mapped to HappyRobot levers, voice specifics, demo scenario, open decisions | 🟡 ideation draft — open decisions in §10 |
 | 07 | [Risk vector](07-risk-vector.md) | Deep dive on scoring: impact × suspicion matrix, tool registry, noisy-OR signals, worked examples, calibration plan | 🟡 v0.1 — weights are placeholders |
-| 08 | [Deployment](08-deployment.md) | What PhoneFlow's backend needs and three ways to run it (managed media + cheap compute · one VPS · laptop + tunnels); how it combines with HappyRobot | 🟡 decision needed: pick option A |
-| 09 | [PhoneFlow model I/O](09-phoneflow-model-io.md) | Everything that flows into/out of the LLM in `apps/voice-agent`: prompt assembly, tools, transitions, data requests, hook points for the guard | ✅ code-referenced; hook points in §5 |
-| 10 | [Guardian above HappyRobot](10-happyrobot-guardian-capabilities.md) | Need-by-need map of what HappyRobot's API gives a guardian: monitor inputs, monitor outputs, shut down (all levers), investigate impact, rogue-index signal sources, gaps, minimal architecture | ✅ from spec; verify with a key |
 | 11 | [Inline layer design](11-inline-layer-design.md) | How every prompt node (sub-agent) routes through our model: the Custom-LLM contract, per-node identity, the 8-step turn pipeline, hold mechanics, fleet installer, session state / rogue index, failure modes, build order | 🟡 design; 5 items to verify with a key |
+
+### 3. Build, deployment & live results
+
+| # | Doc | What it answers | Status |
+|---|---|---|---|
+| 08 | [Deployment](08-deployment.md) | What PhoneFlow's backend needs and three ways to run it (managed media + cheap compute · one VPS · laptop + tunnels); how it combines with HappyRobot | 🟡 decision needed: pick option A |
+| 09 | [AngryRobots model I/O](09-angryrobots-model-io.md) | Everything that flows into/out of the LLM in `apps/voice-agent`: prompt assembly, tools, transitions, data requests, hook points for the guard | ✅ code-referenced; hook points in §5 |
+| 10 | [Guardian above HappyRobot](10-happyrobot-guardian-capabilities.md) | Need-by-need map of what HappyRobot's API gives a guardian: monitor inputs, monitor outputs, shut down (all levers), investigate impact, rogue-index signal sources, gaps, minimal architecture | ✅ from spec; verify with a key |
 | 12 | [First-contact findings](12-first-contact-findings.md) | What the EU org actually returns: env facts, the API-only probe loop (create → publish → chat → records), field-level record contents, correlation via `current.run_id` prompt vars, Custom LLM credential created via API, the open model-id question, probe assets | ✅ live data, 2026-09-19 |
 | 13 | [Rogue scenario triggers](13-rogue-scenario-triggers.md) | Trigger taxonomy (T1–T8), every 2024–26 incident mapped to its trigger, mechanism and first signal, projection onto a HappyRobot voice/tool agent, and a 12-scenario red-team set with expected verdicts | ✅ |
 | 14 | [Rogue agent lab](14-rogue-agent-lab.md) | HappyRobot's own eval doctrine (northstars → custom evals → adversarial → prompt-issue mining); six rogue personas built and attacked via API with verbatim violations; the finding that native audits are off by default and API-keys get 403 enabling them | ✅ live results |
 | — | [`happyrobot-api-v2.openapi.json`](happyrobot-api-v2.openapi.json) | Raw public spec (800 KB) | snapshot 2026-09-18 |
 
-Code lives one level up: [`hr_watch.py`](../hr_watch.py) (all-layers watcher) and [`angryrobots/`](../phoneflow/) (project base **AngryRobots**, forked from getphoneflow/phoneflow).
+Code lives one level up: [`tools/`](../tools/README.md) (HappyRobot API scripts — watcher, explorer, extractor, probes, rogue lab) and [`angryrobots/`](../angryrobots/README.md) (project base **AngryRobots**, forked from getphoneflow/phoneflow). The deliverable itself — the guardian/audit service — lives in [`angryrobot/`](../angryrobot/README.md), deployed on Render.
 
 ## One-paragraph thesis
 
@@ -44,3 +58,4 @@ Every open-source runtime auditor (Microsoft AGT, Invariant, LlamaFirewall, Open
 - 2026-09-19 — first real API session: 12 added; hr_explore.py, hr_probe_chat.py; org is EU-region.
 - 2026-09-19 — added 13 (scenario → trigger map + red-team set).
 - 2026-09-19 — rogue lab: 6 personas, 4 real violations, native audits off by default (403 to enable via API/MCP).
+- 2026-09-19 — repo reorg: root `hr_*.py` scripts moved to `tools/`; fixed stale `09-phoneflow-model-io.md` / `../phoneflow/` links; index grouped into research / framework / build sections.

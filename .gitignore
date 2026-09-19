@@ -18,6 +18,10 @@ dist/
 build/
 *.log
 
+# Python
+__pycache__/
+*.pyc
+
 # hr_watch local state
 hr_watch.sqlite
 hr_watch.jsonl

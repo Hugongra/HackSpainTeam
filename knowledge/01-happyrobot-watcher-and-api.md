@@ -45,9 +45,9 @@ Signals — pub/sub keys (org.* / usecase.* / session.*) that can target *active
 |---|---|---|---|---|
 | 1 | **Poll REST** | everything | ✅ confirmed | Consistent page/cursor pagination; `GET /workflows/{id}/runs?sort=desc&status=running`. This is the backbone. |
 | 2 | **SSE** `GET /sessions/{id}/stream?backfillLimit=N` | messages, live | ✅ route confirmed (401 unauth) | Emits `message` events until the session ends. One stream per session. |
-| 3 | **Realtime JWT** `POST /realtime/tokens` | runs firehose, run detail, org conversations, adversarial tests | ⚠️ endpoint confirmed, **WS host unknown** | Channels: `runs_firehose`, `run_detail`, `conversations_org`, `conversation_group`, `adversarial_test`. No route under `/api/v2/realtime*` or obvious subdomains — probably a third-party realtime provider. Decode the JWT claims (`hr_watch.py realtime …` does this) or watch the app's network tab. |
+| 3 | **Realtime JWT** `POST /realtime/tokens` | runs firehose, run detail, org conversations, adversarial tests | ⚠️ endpoint confirmed, **WS host unknown** | Channels: `runs_firehose`, `run_detail`, `conversations_org`, `conversation_group`, `adversarial_test`. No route under `/api/v2/realtime*` or obvious subdomains — probably a third-party realtime provider. Decode the JWT claims (`tools/hr_watch.py realtime …` does this) or watch the app's network tab. |
 | 4 | **LiveKit audio observer** `POST /voice/tokens/ {session_id, should_takeover:false}` | live audio + LiveKit data/transcription events | ✅ confirmed | Returns `{url, token, room_name, run_id}`. "Hidden, subscribe-only observer, AI agent stays active." `pip install livekit` works. `should_takeover:true` = human takeover. |
-| 5 | **Push webhook from the workflow** | whatever the workflow chooses to POST | ✅ (workflow-side) | Add an HTTP-request node (end-of-call etc.) pointing at `hr_watch.py listen` (expose via ngrok/cloudflared). Old python SDK shows the classic shape: `{type: start|end, call{id, metadata{from,to}, extraction, classification}, content{recording | messages, tools}}`. |
+| 5 | **Push webhook from the workflow** | whatever the workflow chooses to POST | ✅ (workflow-side) | Add an HTTP-request node (end-of-call etc.) pointing at `tools/hr_watch.py listen` (expose via ngrok/cloudflared). Old python SDK shows the classic shape: `{type: start|end, call{id, metadata{from,to}, extraction, classification}, content{recording | messages, tools}}`. |
 | 6 | **Twin SQL** | bulk / historical | ✅ confirmed | `POST /twin/dump {workflowId, tableName}` then `POST /twin/sql`. Capped rows/bytes; `truncated` flag. |
 | 7 | **Signals** `POST /signals/` | *into* live sessions | ✅ confirmed | Not observation — but a watcher that *reacts* (e.g. inject a hint into an active call) uses this. |
 
@@ -71,7 +71,7 @@ Signals — pub/sub keys (org.* / usecase.* / session.*) that can target *active
 
 ## Tooling in this repo
 
-- [`hr_watch.py`](../hr_watch.py) — stdlib-only watcher: `whoami`, `map`, `poll`, `stream`, `realtime`, `listen`, `sql`, `get`. Mirrors every layer into `hr_watch.sqlite` + `hr_watch.jsonl` with new/changed detection.
+- [`tools/hr_watch.py`](../tools/hr_watch.py) — stdlib-only watcher: `whoami`, `map`, `poll`, `stream`, `realtime`, `listen`, `sql`, `get`. Mirrors every layer into `hr_watch.sqlite` + `hr_watch.jsonl` with new/changed detection.
 - [`happyrobot-endpoints.md`](02-happyrobot-endpoints.md) — all 179 endpoints grouped by tag.
 - Use `/usr/bin/python3` on this Mac (PlatformIO's `python3` on PATH has no CA bundle).
 

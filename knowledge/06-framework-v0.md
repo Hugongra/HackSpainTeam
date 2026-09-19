@@ -48,7 +48,7 @@ Seven dimensions; the first five come straight from the incidents map, the last 
 | **C** Commitment | none | soft ("should be", "usually") | hard obligation: rate, ETA, guarantee, "done/booked/sent" | judge + regex |
 | **I** Identity/disclosure | none | asked "are you human?" | PII / secret / other-customer data in assistant text; impersonation | regex + judge |
 
-**Severity floor from hard triggers** (§3) overrides everything. Otherwise: `base = max(R,B) + (E==2) + D + (V==2) + C + I`, banded: 0–1 → S0, 2–3 → S1, 4–5 → S2, ≥6 → S3. (Deliberately crude — tune with data from `hr_watch.py`.)
+**Severity floor from hard triggers** (§3) overrides everything. Otherwise: `base = max(R,B) + (E==2) + D + (V==2) + C + I`, banded: 0–1 → S0, 2–3 → S1, 4–5 → S2, ≥6 → S3. (Deliberately crude — tune with data from `tools/hr_watch.py`.)
 
 ---
 
@@ -114,7 +114,7 @@ Aggregation: 3×S1 in a session → S2 · 2×S2 in a session → S3 · S3 rate �
 | 1 Inline | Custom LLM endpoint on the prompt node (`custom-llm-server` fork) | Tier 0 built-ins, Tier 1 tools, every utterance |
 | 1b Inline | Forwarding proxy in front of HTTP/action nodes | Tier 2 graph actions consuming extracted variables |
 | 2 Real-time | SSE `/sessions/{id}/stream`, `/runs/{id}/nodes`, LiveKit observer | anything not proxied; defence-in-depth |
-| 3 Post-hoc | `hr_watch.py` poll → SQLite; northstar audits, flags, issues, Twin | patterns, versions, contacts, cost |
+| 3 Post-hoc | `tools/hr_watch.py` poll → SQLite; northstar audits, flags, issues, Twin | patterns, versions, contacts, cost |
 | Test | `/adversarial-tests`, `/e2e-scenarios`, `/test-suites` | control evaluations (red team vs our monitors) |
 
 ---

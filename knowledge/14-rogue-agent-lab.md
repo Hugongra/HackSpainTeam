@@ -1,6 +1,6 @@
 # The rogue-agent lab — generating agents that misbehave, and what HappyRobot catches
 
-*2026-09-19. Six deliberately rogue agents built and attacked via API; HappyRobot's own quality machinery examined from the inside (their MCP `eval-guide`, the Northstars/Audits/Tests UI). Tool: [`hr_rogue_lab.py`](../hr_rogue_lab.py). Transcripts + audit dumps in `explore/rogue-lab/` (gitignored).*
+*2026-09-19. Six deliberately rogue agents built and attacked via API; HappyRobot's own quality machinery examined from the inside (their MCP `eval-guide`, the Northstars/Audits/Tests UI). Tool: [`tools/hr_rogue_lab.py`](../tools/hr_rogue_lab.py). Transcripts + audit dumps in `explore/rogue-lab/` (gitignored).*
 
 ---
 
@@ -87,9 +87,9 @@ Our layer is therefore **complementary, not competitive**: reuse their northstar
 
 ```bash
 set -a; source .env; set +a
-/usr/bin/python3 hr_rogue_lab.py create     # 6 workflows + 5 northstars each + publish
-/usr/bin/python3 hr_rogue_lab.py attack     # scripted attacks, transcripts saved
-/usr/bin/python3 hr_rogue_lab.py report     # audits / flags / issues scorecard
+/usr/bin/python3 tools/hr_rogue_lab.py create     # 6 workflows + 5 northstars each + publish
+/usr/bin/python3 tools/hr_rogue_lab.py attack     # scripted attacks, transcripts saved
+/usr/bin/python3 tools/hr_rogue_lab.py report     # audits / flags / issues scorecard
 ```
 
 Costs ≈3.4 credits per conversation. Personas, policy and attack scripts are all data at the top of the script — add a persona by adding a dict entry.
@@ -110,7 +110,7 @@ Every one of these is invisible to a transcript-only reviewer and obvious to a d
 
 ### The labelled corpus
 
-`hr_rogue_lab.py corpus` emits **`explore/rogue-lab/corpus.jsonl`** — one record per run, each carrying the ground truth:
+`tools/hr_rogue_lab.py corpus` emits **`explore/rogue-lab/corpus.jsonl`** — one record per run, each carrying the ground truth:
 
 ```json
 { "case_id": "booker-54f252c4",

@@ -81,7 +81,7 @@ HappyRobot ◀──resp── ⑧ emit (stream) ◀── ⑦ act ◀── ⑥
 ## 4. Fleet control: wiring every workflow
 
 ### 4a. Manual (works today)
-In the builder, on each prompt node: Model → *Custom LLM*, Endpoint URL → our route for that node, API key → the node token. `hr_watch.py map` prints the list of prompt nodes per live version so nothing is missed.
+In the builder, on each prompt node: Model → *Custom LLM*, Endpoint URL → our route for that node, API key → the node token. `tools/hr_watch.py map` prints the list of prompt nodes per live version so nothing is missed.
 
 ### 4b. Automated installer (verify once we have a key)
 The API has every primitive except a documented way to express "custom endpoint" in `model`:

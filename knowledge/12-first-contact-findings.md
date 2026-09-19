@@ -1,6 +1,6 @@
 # First contact with the HappyRobot org — what the API actually returns
 
-*2026-09-19, ~00:30. Org **HackSpain – Team 10** (`hackspainteam10`, tier enterprise, **EU region**). Key "Angryrobots". Tools: `hr_explore.py`, `hr_probe_chat.py`, `hr_watch.py listen`. Raw dumps in `explore/` (gitignored).*
+*2026-09-19, ~00:30. Org **HackSpain – Team 10** (`hackspainteam10`, tier enterprise, **EU region**). Key "Angryrobots". Tools: `tools/hr_explore.py`, `tools/hr_probe_chat.py`, `tools/hr_watch.py listen`. Raw dumps in `explore/` (gitignored).*
 
 ## Environment facts
 
@@ -42,7 +42,7 @@ Behaviour of the default agent under our first red-team turns: refused the "igno
 ## Custom LLM Server — status
 
 - It is an **integration** (`019d75d2-9590-75c3-a924-dc1afbd61000`, group data, `agent_specific: true`, "Bring your own OpenAI-compatible endpoint for headless voice agents"). Credential form: `endpoint` (…/v1), `auth_type` bearer|oauth2, `api_key`, `oauth2_credential_id`.
-- **Created via API**: `POST /integrations/{id}/create-credential {credential_type:"endpoint", title, data:{endpoint, auth_type:"bearer", api_key}}` → credential `01a0b6a3-73ef-7dd2-9b46-01a91e6b744a` pointing at our cloudflared tunnel (`hr_watch.py listen --reply say`, verified reachable; QUIC was blocked, `--protocol http2` works).
+- **Created via API**: `POST /integrations/{id}/create-credential {credential_type:"endpoint", title, data:{endpoint, auth_type:"bearer", api_key}}` → credential `01a0b6a3-73ef-7dd2-9b46-01a91e6b744a` pointing at our cloudflared tunnel (`tools/hr_watch.py listen --reply say`, verified reachable; QUIC was blocked, `--protocol http2` works).
 - **Unknown: the `model.static.id` that binds a prompt node to it.** `PUT /versions/{v}/nodes/{n}` accepts *any* id without validation; an invalid id (we tried the credential uuid) makes the text agent **silently ignore user messages** — no error in run nodes, session `llm_model: null`. Publishing the same version twice → `400 Version is already live` (fork per attempt).
 - Hypotheses left: the builder writes a specific id (e.g. `custom-llm`, `custom-llm/<cred>`), or Custom LLM only applies to **voice** agent nodes (per its description) and the chatbot path ignores it. Fastest resolution: set it once in the builder UI on the voice probe and read the node back.
 
@@ -57,11 +57,11 @@ Behaviour of the default agent under our first red-team turns: refused the "igno
 
 1. Learn the Custom-LLM model id (UI once → API forever) and confirm the capture endpoint receives `messages[] + tools[]`.
 2. Drive the voice probe headlessly: `POST /voice/tokens/ {workflow_id}` → LiveKit room; inject `say`-synthesised speech with the LiveKit Python SDK → fully automated voice red-teaming.
-3. Turn `hr_probe_chat.py` into the red-team runner (scenario files) and start filling the ledger.
+3. Turn `tools/hr_probe_chat.py` into the red-team runner (scenario files) and start filling the ledger.
 
 ## Update 00:55 — tool execution on a voice call, end to end (headless)
 
-Built on the voice probe via API only: prompt rewritten to collect company / city / availability / callback, a `tool` node `save_carrier_info` (4 agent-bound params) under the prompt node, and a Webhook **POST** action under the tool pointing at our tunnel. Headless caller (`hr_voice_probe.py`, macOS `say`) answered the questions; the agent called the tool, our server received it, the agent confirmed and hung up.
+Built on the voice probe via API only: prompt rewritten to collect company / city / availability / callback, a `tool` node `save_carrier_info` (4 agent-bound params) under the prompt node, and a Webhook **POST** action under the tool pointing at our tunnel. Headless caller (`tools/hr_voice_probe.py`, macOS `say`) answered the questions; the agent called the tool, our server received it, the agent confirmed and hung up.
 
 **API gotchas that cost time (now solved):**
 - Publish blocker `"Tool Call Result has not been opened yet"` → `POST /versions/{v}/tools/{tool}/tool-call-result/inspect` (returns `ack_state: ack`); `is_complete` stays false but publish proceeds.

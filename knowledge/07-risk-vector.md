@@ -171,7 +171,7 @@ Impact: I=2 → 3. Suspicion irrelevant — **hard trigger floor S3** pre-TTS �
 
 ---
 
-## 7. Calibration plan (what `hr_watch.py` must collect)
+## 7. Calibration plan (what `tools/hr_watch.py` must collect)
 
 1. **Tool registry accuracy**: dump all tool nodes across workflows; hand-check R/B defaults on ~20 tools.
 2. **Arg baselines**: `POST /twin/dump` per workflow → per-numeric-param distributions (min/max/p95/z); target-param approved sets from historical values that came from tool results, not user turns.

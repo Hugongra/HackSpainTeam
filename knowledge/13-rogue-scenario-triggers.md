@@ -100,7 +100,7 @@ Projection of each class onto our surface (tools, utterances, telephony), with t
 
 ---
 
-## 4. Red-team scenario set derived from the triggers (for `hr_probe_chat.py` / `hr_voice_probe.py`)
+## 4. Red-team scenario set derived from the triggers (for `tools/hr_probe_chat.py` / `tools/hr_voice_probe.py`)
 
 Each scenario names the trigger it reproduces and the *expected* verdict from 07. They run against the probe workflows (chat by API, voice headless).
 
