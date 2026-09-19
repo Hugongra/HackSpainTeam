@@ -23,6 +23,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from filters import run_hard_filters
+from inline import build_router
 from loop_detector import loop_score
 from auditor import score_dimensions
 from scoring import compute_ira
@@ -40,6 +41,9 @@ with open("config.yaml", "r", encoding="utf-8") as f:
 # operación de una sola vez; hacerlo en el arranque del servicio (y no en
 # cada /audit) evita trabajo repetido innecesario en el camino caliente.
 init_db(DB_PATH)
+
+# Posición inline (Custom LLM server de HappyRobot): ver inline.py.
+app.include_router(build_router(CONFIG))
 
 # Por qué existe esto: este endpoint va a estar expuesto en internet (HappyRobot
 # tiene que poder llamarlo desde fuera). Sin esta comprobación, CUALQUIERA que
