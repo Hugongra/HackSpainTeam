@@ -10,9 +10,9 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Badge, Button, Card, Icon, Input, Select, Tabs, Verdict } from "../ds";
-import { api, settings } from "../api";
+import { api } from "../api";
 import { DEMO_RUNS } from "../demo";
-import { ErrorNote, RunDrawer, SEV, Signals, useAsync } from "./shared";
+import { ErrorNote, RunDrawer, Signals, useAsync } from "./shared";
 import { DEMO_WORKFLOWS, Escalations, StatusBadge, WorkflowDetail } from "./Platform";
 import { Overview, Runs, TryAction, useData } from "./Console";
 
@@ -24,17 +24,17 @@ export const INPUTS = {
   n8n: { label: "n8n / Make / Zapier", sub: "HTTP node → /v1/ingest", icon: "zap", source: "n8n" },
   webhook: { label: "Custom webhook", sub: "POST /v1/ingest per turn", icon: "activity", source: "webhook" },
 };
+// Verdict → directive is fixed on the service (after_turn): ALLOW continue · WARN continue+note · DEFER escalate · KILL kill.
+// Notify is the workflow's control_url: the service POSTs every non-continue directive and control change there.
 export const OUTPUTS = {
-  continue: { label: "Continue", sub: "action returned to the agent as proposed", icon: "check", verdicts: ["ALLOW"], tone: "paper" },
-  warn: { label: "Supervisor note", sub: "passes, agent gets a correction next turn", icon: "eye", verdicts: ["WARN"], tone: "paper" },
-  escalate: { label: "Escalate", sub: "held · a human approves, denies or takes over", icon: "hand", verdicts: ["DEFER"], tone: "sand" },
+  continue: { label: "Continue", sub: "returned to the agent as proposed", icon: "check", verdicts: ["ALLOW"], tone: "paper" },
+  warn: { label: "Supervisor note", sub: "passes with a correction next turn", icon: "eye", verdicts: ["WARN"], tone: "paper" },
+  escalate: { label: "Escalate", sub: "held for approve · deny · take over", icon: "hand", verdicts: ["DEFER"], tone: "sand" },
   kill: { label: "Kill", sub: "conversation closed · run locked", icon: "octagon", verdicts: ["KILL"], tone: "ink" },
-  pause: { label: "Pause workflow", sub: "every run of the workflow stops taking turns", icon: "shield-alert", verdicts: ["KILL"], tone: "ink" },
-  hr_takeover: { label: "HappyRobot lever", sub: "cancel run · takeover · unpublish", icon: "plug", verdicts: ["DEFER", "KILL"], tone: "freight" },
-  notify: { label: "Notify", sub: "POST the audit to a webhook / Slack", icon: "siren", verdicts: ["DEFER", "KILL"], tone: "paper" },
+  notify: { label: "Notify", sub: "control_url webhook (HappyRobot, n8n, Slack)", icon: "siren", verdicts: ["DEFER", "KILL"], tone: "paper" },
 };
 const VERDICTS = ["ALLOW", "WARN", "DEFER", "KILL"];
-const STORE = "ar_board_v2";
+const STORE = "ar_board_v3";
 const GUARD_ID = "guard";
 
 /* ---------------------------------------------------------------- graph seed + persistence */
@@ -51,7 +51,14 @@ function seedGraph(workflows) {
   ];
   return { nodes: [...inputs, guard, ...outs], edges };
 }
-const loadGraph = () => { try { return JSON.parse(localStorage.getItem(STORE)); } catch { return null; } };
+const loadGraph = () => {
+  try {
+    const g = JSON.parse(localStorage.getItem(STORE)); if (!g) return null;
+    const nodes = g.nodes.filter((n) => n.type !== "lever" || OUTPUTS[n.data.kind]);
+    const ids = new Set(nodes.map((n) => n.id));
+    return { nodes, edges: g.edges.filter((e) => ids.has(e.source) && ids.has(e.target)) };
+  } catch { return null; }
+};
 const saveGraph = (g) => { try { localStorage.setItem(STORE, JSON.stringify(g)); } catch { /* blocked storage */ } };
 
 /* ---------------------------------------------------------------- traffic model
@@ -128,7 +135,7 @@ function OutputNode({ data, selected }) {
       <Handle type="target" position={Position.Left} style={HANDLE} />
       <div className="bn-head"><Icon name={cat.icon} size={16} /><span className="ar-mono" style={{ opacity: .7 }}>LEVER</span></div>
       <strong className="bn-title">{cat.label}</strong>
-      <span className="bn-sub" style={{ opacity: .8 }}>{data.target ? data.target : cat.sub}</span>
+      <span className="bn-sub" style={{ opacity: .8 }}>{cat.sub}</span>
       {data.count != null && <div className="bn-foot"><span className="ar-mono" style={{ opacity: .8 }}>{data.count} ↓</span>{data.waiting ? <Badge tone="accent" dot>{data.waiting} waiting</Badge> : null}</div>}
     </Shell>
   );
@@ -171,20 +178,20 @@ function Palette({ hasGuard }) {
       <Item icon="brain" label="AngryRobot" sub="IRA audit — one per board" payload={{ type: "guard" }} disabled={hasGuard} />
       <span className="ar-overline muted" style={{ marginTop: 18 }}>Levers</span>
       {Object.entries(OUTPUTS).map(([k, c]) => <Item key={k} icon={c.icon} label={c.label} sub={c.sub} payload={{ type: "lever", kind: k }} />)}
-      <p className="ar-caption muted" style={{ marginTop: 18 }}>Drag onto the board, then draw a line from an input to the guard, and from the guard to a lever. Click anything for its detail.</p>
     </aside>
   );
 }
 
 /* ---------------------------------------------------------------- traffic strip */
-function TrafficStrip({ events, filter, onClear, onOpenRun, loading }) {
+function TrafficStrip({ events, filter, filterLabel, onClear, onDisconnect, onOpenRun, loading }) {
   const rows = events.filter((e) => !filter || filter(e)).slice(-80).reverse();
   return (
     <section className="traffic" aria-label="Traffic">
       <header className="traffic-head">
-        <span className="ar-overline muted">Traffic · {rows.length} events</span>
-        <span className="ar-caption muted">↑ into AngryRobot (turns, proposed actions, reasoning) · ↓ back to the agent (verdict, lever)</span>
-        {filter && <Button size="sm" variant="secondary" onClick={onClear}>Clear filter</Button>}
+        <span className="ar-overline muted">Traffic · {rows.length}</span>
+        <span className="ar-caption muted"><b style={{ color: "var(--ar-green)" }}>↑</b> in · <b>↓</b> out{filterLabel ? ` · ${filterLabel}` : ""}</span>
+        {onDisconnect && <Button size="sm" variant="secondary" onClick={onDisconnect} iconLeft={<Icon name="x" size={14} />}>Disconnect</Button>}
+        {filter && <Button size="sm" variant="secondary" onClick={onClear}>All traffic</Button>}
       </header>
       <div className="traffic-body">
         {loading && <p className="ar-caption muted" style={{ padding: 12 }}>Loading runs…</p>}
@@ -200,7 +207,7 @@ function TrafficStrip({ events, filter, onClear, onOpenRun, loading }) {
             )}
           </button>
         ))}
-        {!loading && !rows.length && <p className="ar-caption muted" style={{ padding: 12 }}>No traffic yet on this edge.</p>}
+        {!loading && !rows.length && <p className="ar-caption muted" style={{ padding: 12 }}>No traffic.</p>}
       </div>
     </section>
   );
@@ -241,23 +248,22 @@ function InputDrawer({ node, live, profiles, onChange, onRemove, onClose, refres
       {d.workflow_id ? (
         <WorkflowDetail id={d.workflow_id} live={live} refreshKey={refreshKey} onChanged={() => {}} />
       ) : (
-        <Card padding={24} eyebrow="REGISTER THIS CONNECTOR">
+        <Card padding={24} eyebrow="REGISTER">
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <Input label="Name" value={form.label} onChange={set("label")} />
             <div className="form-2">
               <Select label="Policy profile" value={form.profile} onChange={set("profile")} options={profiles.map((p) => ({ value: p, label: p }))} />
               <Select label="Mode" value={form.mode} onChange={set("mode")} options={[{ value: "enforce", label: "Enforce" }, { value: "observe", label: "Observe only" }]} />
             </div>
-            {d.kind === "happyrobot" && <p className="ar-caption muted">After registering you get a Custom LLM base URL and a per-turn webhook to paste in the HappyRobot builder (Integrations → Custom LLM server).</p>}
             {err && <ErrorNote error={err} />}
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <Button onClick={live ? register : () => onChange({ ...d, ...form })} disabled={busy}>{live ? (busy ? "Registering…" : "Register on the service") : "Save on the board"}</Button>
-              {!live && <span className="ar-caption muted" style={{ alignSelf: "center" }}>Add the shared secret in Settings to register it for real.</span>}
+              <Button onClick={live ? register : () => onChange({ ...d, ...form })} disabled={busy}>{live ? (busy ? "Registering…" : "Register") : "Save"}</Button>
+              {!live && <Button variant="secondary" onClick={() => { window.location.hash = "#/console/settings"; }}>Connect the service</Button>}
             </div>
           </div>
         </Card>
       )}
-      <Button variant="secondary" size="sm" onClick={onRemove} style={{ alignSelf: "flex-start" }} iconLeft={<Icon name="x" size={15} />}>Remove from board</Button>
+      <Button variant="secondary" size="sm" onClick={onRemove} style={{ alignSelf: "flex-start" }} iconLeft={<Icon name="x" size={15} />}>Remove</Button>
     </Drawer>
   );
 }
@@ -274,52 +280,49 @@ function GuardDrawer({ data, live, onOpenRun, onClose, initialTab = "alerts" }) 
   );
 }
 
-function OutputDrawer({ node, live, refreshKey, onChange, onRemove, onClose, data, onOpenRun }) {
+function OutputDrawer({ node, live, refreshKey, onRemove, onClose, data, onOpenRun, connectors }) {
   const d = node.data; const cat = OUTPUTS[d.kind];
-  const [target, setTarget] = React.useState(d.target || "");
   return (
-    <Drawer eyebrow="LEVER" title={cat.label} onClose={onClose} wide={d.kind === "escalate" || d.kind === "kill"}>
-      <p className="ar-small">{cat.sub}. Fires on <b>{cat.verdicts.join(" and ")}</b>{d.kind === "escalate" ? "; silence past the TTL counts as deny." : "."}</p>
+    <Drawer eyebrow="LEVER" title={cat.label} onClose={onClose} wide={d.kind !== "notify"}>
       {d.kind === "escalate" && <Escalations live={live} refreshKey={refreshKey} onChanged={() => {}} />}
       {d.kind === "kill" && <Overview data={data} live={live} onOpenRun={onOpenRun} />}
-      {(d.kind === "notify" || d.kind === "hr_takeover") && (
-        <Card padding={24} eyebrow={d.kind === "notify" ? "DESTINATION" : "HAPPYROBOT ORG"}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <Input label={d.kind === "notify" ? "Webhook URL" : "Workflow slug to act on"} value={target} onChange={(e) => setTarget(e.target.value)} placeholder={d.kind === "notify" ? "https://hooks.slack.com/…" : "angryrobots-probe-voice"} />
-            <Button size="sm" onClick={() => onChange({ ...d, target })} style={{ alignSelf: "flex-start" }}>Save</Button>
-            {d.kind === "hr_takeover" && <p className="ar-caption muted">Wired through integrations/happyrobot_client.py on the service: cancel-run, takeover and unpublish using the correlated run id.</p>}
-          </div>
-        </Card>
-      )}
-      <Button variant="secondary" size="sm" onClick={onRemove} style={{ alignSelf: "flex-start" }} iconLeft={<Icon name="x" size={15} />}>Remove from board</Button>
+      {d.kind === "notify" && <NotifyConfig live={live} connectors={connectors} refreshKey={refreshKey} />}
+      <Button variant="secondary" size="sm" onClick={onRemove} style={{ alignSelf: "flex-start" }} iconLeft={<Icon name="x" size={15} />}>Remove</Button>
     </Drawer>
   );
 }
 
-function EdgeDrawer({ edge, nodes, onChange, onRemove, onClose }) {
-  const src = nodes.find((n) => n.id === edge.source); const tgt = nodes.find((n) => n.id === edge.target);
-  const fromGuard = src?.type === "guard";
-  const toggle = (v) => { const cur = edge.data?.verdicts || []; onChange({ ...edge.data, verdicts: cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v] }); };
+/* Notify = control_url on each registered workflow: the service POSTs directives and control changes there. */
+function NotifyConfig({ live, connectors, refreshKey }) {
+  const ids = connectors.map((n) => n.data.workflow_id).filter(Boolean);
+  const [wfs, reload] = useAsync(() => (live ? Promise.all(ids.map((id) => api.workflow(id).catch(() => null))) : Promise.resolve([])), [live, ids.join(","), refreshKey]);
+  const current = (wfs.data || []).filter(Boolean);
+  const [url, setUrl] = React.useState("");
+  const [busy, setBusy] = React.useState(false); const [err, setErr] = React.useState(null); const [ok, setOk] = React.useState(0);
+  React.useEffect(() => { const first = current.find((w) => w.control_url); if (first && !url) setUrl(first.control_url); }, [current.length]); // eslint-disable-line
+  const apply = async (value) => {
+    setBusy(true); setErr(null);
+    try { await Promise.all(ids.map((id) => api.updateWorkflow(id, { control_url: value || null }))); setOk((n) => n + 1); reload(); }
+    catch (x) { setErr(x); } finally { setBusy(false); }
+  };
   return (
-    <Drawer eyebrow="EDGE" title={`${src?.data?.label || (src?.type === "guard" ? "AngryRobot" : OUTPUTS[src?.data?.kind]?.label)} → ${tgt?.type === "guard" ? "AngryRobot" : (OUTPUTS[tgt?.data?.kind]?.label || tgt?.data?.label)}`} onClose={onClose}>
-      {fromGuard ? (
-        <Card padding={24} eyebrow="FIRES ON">
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {VERDICTS.map((v) => (
-              <label key={v} className={`chip ${edge.data?.verdicts?.includes(v) ? "floor" : ""}`} style={{ cursor: "pointer" }}>
-                <input type="checkbox" checked={edge.data?.verdicts?.includes(v) || false} onChange={() => toggle(v)} style={{ marginRight: 6 }} />{v}
-              </label>
-            ))}
-          </div>
-          <p className="ar-caption muted" style={{ marginTop: 12 }}>ALLOW &lt; 40 · WARN 40–69 · DEFER 70–89 · KILL ≥ 90 on the IRA index.</p>
-        </Card>
-      ) : (
-        <Card padding={24} eyebrow="WHAT GOES UP THIS EDGE">
-          <p className="ar-small">Every turn: the caller's input, the agent's proposed sentence or tool call, its reasoning when the model exposes it, and the previous tool results. The traffic strip below the board is now filtered to this connector.</p>
-        </Card>
-      )}
-      <Button variant="secondary" size="sm" onClick={onRemove} style={{ alignSelf: "flex-start" }} iconLeft={<Icon name="x" size={15} />}>Disconnect</Button>
-    </Drawer>
+    <Card padding={24} eyebrow="CONTROL URL">
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <Input label="Webhook" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
+        {err && <ErrorNote error={err} />}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Button size="sm" onClick={() => apply(url.trim())} disabled={!live || busy || !ids.length}>{busy ? "Saving…" : `Apply to ${ids.length} workflow${ids.length === 1 ? "" : "s"}`}</Button>
+          <Button size="sm" variant="secondary" onClick={() => { setUrl(""); apply(""); }} disabled={!live || busy || !ids.length}>Clear</Button>
+          {!live && <Button size="sm" variant="secondary" onClick={() => { window.location.hash = "#/console/settings"; }}>Connect the service</Button>}
+        </div>
+        {current.length > 0 && (
+          <table className="table"><tbody>
+            {current.map((w) => <tr key={w.id} style={{ cursor: "default" }}><td>{w.name}</td><td className="code" style={{ color: w.control_url ? "var(--text-body)" : "var(--text-muted)" }}>{w.control_url || "—"}</td></tr>)}
+          </tbody></table>
+        )}
+        {ok > 0 && <span className="ar-caption" style={{ color: "var(--status-positive)" }}>Saved.</span>}
+      </div>
+    </Card>
   );
 }
 
@@ -344,6 +347,8 @@ function BoardInner({ live, refreshKey, initial }) {
   }, [flow, graphReady]);
   const [sel, setSel] = React.useState(initial || null);          // {type:'node'|'edge', id, tab?}
   const [openRun, setOpenRun] = React.useState(null);
+  const [busyAll, setBusyAll] = React.useState(false); const [allErr, setAllErr] = React.useState(null);
+  const controlAll = async (action) => { setBusyAll(true); setAllErr(null); try { await api.controlAll(action); } catch (x) { setAllErr(x); } finally { setBusyAll(false); } };
 
   // First visit: seed the board from the connected workflows.
   React.useEffect(() => { if (!graph && wfs.data) setGraph(seedGraph(wfs.data.workflows || [])); }, [graph, wfs.data]);
@@ -402,7 +407,6 @@ function BoardInner({ live, refreshKey, initial }) {
   };
   const setNodeData = (id, d) => patch((g) => ({ nodes: g.nodes.map((n) => (n.id === id ? { ...n, data: d } : n)) }));
   const removeNode = (id) => { patch((g) => ({ nodes: g.nodes.filter((n) => n.id !== id), edges: g.edges.filter((e) => e.source !== id && e.target !== id) })); setSel(null); };
-  const setEdgeData = (id, d) => patch((g) => ({ edges: g.edges.map((e) => (e.id === id ? { ...e, data: d } : e)) }));
   const removeEdge = (id) => { patch((g) => ({ edges: g.edges.filter((e) => e.id !== id) })); setSel(null); };
 
   // Traffic filter follows the selection.
@@ -420,16 +424,24 @@ function BoardInner({ live, refreshKey, initial }) {
     return null;
   }, [sel, graph]);
 
+  const filterLabel = (() => {
+    if (!sel) return "";
+    if (sel.type === "edge") { const e = graph?.edges.find((x) => x.id === sel.id); const s0 = graph?.nodes.find((n) => n.id === e?.source); const t0 = graph?.nodes.find((n) => n.id === e?.target);
+      return s0?.type === "guard" ? `guard → ${OUTPUTS[t0?.data?.kind]?.label || ""}` : `${s0?.data?.label || ""} → guard`; }
+    const n = graph?.nodes.find((x) => x.id === sel.id);
+    return n?.type === "lever" ? OUTPUTS[n.data.kind]?.label : n?.type === "connector" ? n.data.label : "";
+  })();
   const runsById = Object.fromEntries([...(data.runs.data || []), ...(traffic.data || [])].map((r) => [r.run_id, r]));
   const openById = (id) => setOpenRun(runsById[id] || { run_id: id, profile: "", summary: {} });
   const selNode = sel?.type === "node" ? nodes.find((n) => n.id === sel.id) : null;
   const selEdge = sel?.type === "edge" ? graph?.edges.find((e) => e.id === sel.id) : null;
   const issues = [];
   if (graph) {
-    if (!graph.nodes.some((n) => n.type === "guard")) issues.push("There is no AngryRobot guard on the board.");
-    graph.nodes.filter((n) => n.type === "connector" && !graph.edges.some((e) => e.source === n.id)).forEach((n) => issues.push(`${n.data.label} is not connected to the guard.`));
-    if (!graph.edges.some((e) => (e.data?.verdicts || []).includes("KILL"))) issues.push("No lever fires on KILL — a run that must stop has nowhere to go.");
-    if (!graph.edges.some((e) => (e.data?.verdicts || []).includes("DEFER"))) issues.push("No lever fires on DEFER — held actions would wait forever.");
+    if (!graph.nodes.some((n) => n.type === "guard")) issues.push("No guard on the board.");
+    graph.nodes.filter((n) => n.type === "connector" && !graph.edges.some((e) => e.source === n.id)).forEach((n) => issues.push(`${n.data.label} → guard missing.`));
+    graph.nodes.filter((n) => n.type === "connector" && !n.data.workflow_id).forEach((n) => issues.push(`${n.data.label} not registered.`));
+    if (!graph.edges.some((e) => (e.data?.verdicts || []).includes("KILL"))) issues.push("No Kill lever.");
+    if (!graph.edges.some((e) => (e.data?.verdicts || []).includes("DEFER"))) issues.push("No Escalate lever.");
   }
 
   if (!graph) return <p className="ar-small muted" style={{ padding: 24 }}>{wfs.error ? "Could not load the workflows; using the example board." : "Laying out the board…"}</p>;
@@ -449,24 +461,33 @@ function BoardInner({ live, refreshKey, initial }) {
           {issues.length > 0 && (
             <div className="board-issues" role="status">
               <Icon name="alert-triangle" size={16} />
-              <span>{issues[0]}{issues.length > 1 ? ` (+${issues.length - 1} more)` : ""}</span>
+              <span>{issues.join(" · ")}</span>
             </div>
           )}
           <div className="board-legend">
-            <span className="ar-mono muted">{live ? "LIVE" : "EXAMPLE DATA"}</span>
-            <Button size="sm" variant="secondary" onClick={() => { localStorage.removeItem(STORE); setGraph(seedGraph(wfs.data?.workflows || [])); }}>Reset layout</Button>
+            {live ? (
+              <>
+                <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => controlAll("pause")}>Pause all</Button>
+                <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => controlAll("resume")}>Resume all</Button>
+                <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => { if (window.confirm("Kill every live run of every workflow?")) controlAll("kill"); }} iconLeft={<Icon name="octagon" size={14} />}>Kill all</Button>
+              </>
+            ) : (
+              <Button size="sm" variant="secondary" onClick={() => { window.location.hash = "#/console/settings"; }} iconLeft={<Icon name="plug" size={14} />}>Connect the service</Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => { localStorage.removeItem(STORE); setGraph(seedGraph(wfs.data?.workflows || [])); }}>Reset layout</Button>
           </div>
+          {allErr && <div className="board-issues" style={{ top: 64 }}><Icon name="alert-triangle" size={16} /><span>{String(allErr.message || allErr)}</span></div>}
         </div>
-        <TrafficStrip events={events} filter={filter} onClear={() => setSel(null)} loading={traffic.loading}
-                      onOpenRun={openById} />
+        <TrafficStrip events={events} filter={filter} filterLabel={filterLabel} onClear={() => setSel(null)} loading={traffic.loading}
+                      onDisconnect={selEdge ? () => removeEdge(selEdge.id) : null} onOpenRun={openById} />
       </div>
 
       {selNode?.type === "connector" && <InputDrawer key={selNode.id} node={selNode} live={live} profiles={profiles} refreshKey={refreshKey}
         onChange={(d) => setNodeData(selNode.id, d)} onRemove={() => removeNode(selNode.id)} onClose={() => setSel(null)} />}
       {selNode?.type === "guard" && <GuardDrawer data={data} live={live} initialTab={sel.tab} onOpenRun={openById} onClose={() => setSel(null)} />}
-      {selNode?.type === "lever" && <OutputDrawer key={selNode.id} node={selNode} live={live} refreshKey={refreshKey} data={data} onOpenRun={openById}
-        onChange={(d) => setNodeData(selNode.id, d)} onRemove={() => removeNode(selNode.id)} onClose={() => setSel(null)} />}
-      {selEdge && <EdgeDrawer edge={selEdge} nodes={graph.nodes} onChange={(d) => setEdgeData(selEdge.id, d)} onRemove={() => removeEdge(selEdge.id)} onClose={() => setSel(null)} />}
+      {selNode?.type === "lever" && ["escalate", "kill", "notify"].includes(selNode.data.kind) && (
+        <OutputDrawer key={selNode.id} node={selNode} live={live} refreshKey={refreshKey} data={data} onOpenRun={openById}
+          connectors={graph.nodes.filter((n) => n.type === "connector")} onRemove={() => removeNode(selNode.id)} onClose={() => setSel(null)} />)}
       {openRun && <RunDrawer run={openRun} live={live && !openRun.persona} onClose={() => setOpenRun(null)} />}
     </div>
   );

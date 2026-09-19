@@ -307,12 +307,11 @@ export default function Console({ view = "board", param = "" }) {
         <a href="#/" style={{ padding: "0 20px 26px", display: "inline-flex" }} aria-label="AngryRobot home"><Logo variant="lockup" tone="paper" height={20} /></a>
         <nav aria-label="Console">{links}</nav>
         <div style={{ marginTop: "auto", padding: "0 20px" }}>
-          <div style={{ boxShadow: "var(--shadow-hairline-dark)", padding: 14 }}>
-            <span className="ar-mono" style={{ color: "var(--text-on-dark-muted)" }}>{live ? "LIVE SERVICE" : "EXAMPLE DATA"}</span>
-            <p className="ar-caption" style={{ color: "var(--text-on-dark-muted)", marginTop: 8 }}>
-              {live ? settings.api.replace(/^https?:\/\//, "") : "Add the shared secret in Settings to drive real workflows."}
-            </p>
-          </div>
+          {live ? (
+            <span className="ar-caption" style={{ color: "var(--text-on-dark-muted)" }}>● {settings.api.replace(/^https?:\/\//, "")}</span>
+          ) : (
+            <Button variant="onDark" size="sm" fullWidth onClick={() => nav("settings")} iconLeft={<Icon name="plug" size={15} />}>Connect the service</Button>
+          )}
         </div>
       </aside>
       <nav className="mobile-nav" aria-label="Console">{links}</nav>
