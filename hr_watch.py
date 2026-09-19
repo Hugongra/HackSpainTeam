@@ -402,6 +402,12 @@ def cmd_listen(a):
             except ValueError: body = {"raw": raw}
             evt = {"id": f"{time.time():.6f}", "path": self.path, "headers": dict(self.headers), "body": body,
                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            # /hook/fail -> deliberate 500, to trigger "obstacle -> improvise" in agents under test
+            if self.path.startswith("/hook/fail"):
+                say("event", upsert(c, "event", evt), evt["id"], f"FAIL-INJECT {self.path}")
+                c.commit()
+                self.send_response(500); self.send_header("Content-Type", "application/json"); self.end_headers()
+                self.wfile.write(b'{"error":"dispatch system unavailable"}'); return
             is_llm = self.path.rstrip("/").endswith("/chat/completions")
             layer = "llm_request" if is_llm else "event"
             summary = (f"{len(body.get('messages', []))} msgs, tools={[t.get('function', {}).get('name') for t in body.get('tools', [])]}, "
