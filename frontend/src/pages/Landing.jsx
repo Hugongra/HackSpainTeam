@@ -39,7 +39,6 @@ function Nav() {
         <a href="#/" aria-label="AngryRobot home" style={{ display: "inline-flex" }}><Logo variant="lockup" tone={onDark ? "paper" : "ink"} height={22} /></a>
         <nav className="nav-links" aria-label="Sections">
           <a href="#how">How it audits</a>
-          <a href="#plug">Plug it in</a>
         </nav>
         <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
           <Button className="nav-secondary" variant={onDark ? "onDark" : "secondary"} size="sm" onClick={go("#/console/settings/signals")}>Signals</Button>
@@ -63,24 +62,23 @@ function Hero({ health }) {
         </p>
         <div style={{ display: "flex", gap: 12, marginTop: 36, flexWrap: "wrap" }}>
           <Button size="lg" variant="inverse" onClick={go("#/console")} iconRight={<Icon name="arrow-right" size={18} />}>Open the console</Button>
-          <Button size="lg" variant="onDark" onClick={go("#plug")}>Plug in an agent</Button>
         </div>
         <div className="stat-row">
           <GlassPanel tone="dark" padding={22}>
-            <span className="ar-mono" style={{ color: "var(--text-on-dark-muted)" }}>ROGUE AGENTS CAUGHT</span>
+            <span className="ar-mono" style={{ color: "var(--text-on-dark-muted)" }}>MALICIOUS AGENTS CAUGHT</span>
             <div className="stat-num num">8 / 8</div>
-            <div className="ar-small" style={{ color: "var(--text-on-dark-muted)", marginTop: 6 }}>in the rogue lab, live service, 19 Sep</div>
+            <div className="ar-small" style={{ color: "var(--text-on-dark-muted)", marginTop: 6 }}>every rogue agent we've tested it against, stopped</div>
           </GlassPanel>
           <GlassPanel tone="accent" padding={22}>
-            <span className="ar-mono" style={{ color: "rgba(244,241,234,0.78)" }}>ROGUE TOOL CALLS EXECUTED</span>
+            <span className="ar-mono" style={{ color: "rgba(244,241,234,0.78)" }}>DANGEROUS ACTIONS THAT SLIPPED THROUGH</span>
             <div className="stat-num num">0</div>
-            <div className="ar-small" style={{ color: "rgba(244,241,234,0.78)", marginTop: 6 }}>book_load and send_update held before they ran</div>
+            <div className="ar-small" style={{ color: "rgba(244,241,234,0.78)", marginTop: 6 }}>risky actions are held before they can run</div>
           </GlassPanel>
           <GlassPanel tone="dark" padding={22}>
             <span className="ar-mono" style={{ color: "var(--text-on-dark-muted)" }}>SERVICE</span>
             <div className="stat-num" style={{ fontSize: 30, lineHeight: "46px" }}>{health === null ? "Checking…" : health ? "Online" : "Asleep"}</div>
             <div className="ar-small" style={{ color: "var(--text-on-dark-muted)", marginTop: 6 }}>
-              {health ? `judge ${health.judge?.model?.split("/").pop()} · agent ${health.agent_default_model?.split("/").pop()}` : "free plan sleeps after 15 min; the console wakes it"}
+              {health ? "live and auditing right now" : "free plan sleeps after 15 min; the console wakes it"}
             </div>
           </GlassPanel>
         </div>
@@ -114,43 +112,6 @@ function HowItAudits() {
   );
 }
 
-function PlugIn() {
-  const snippet = `from openai import OpenAI
-
-agent_llm = OpenAI(
-    base_url="https://hackspainteam.onrender.com/v1/<profile>",
-    api_key="<ANGRYROBOT_SHARED_SECRET>",
-)
-agent_llm.chat.completions.create(
-    model="angryrobot", messages=messages, tools=tools,
-    extra_headers={"X-AngryRobot-Run": session_id},
-)`;
-  const ways = [
-    ["plug", "Custom LLM", "Point any OpenAI-compatible agent at AngryRobot. It calls the real model, audits, and returns only what passes. HappyRobot: Integrations → Custom LLM server."],
-    ["hand", "Action gate", "Frameworks with hooks call POST /v1/audit before each action and POST /v1/observe with inputs and tool results."],
-    ["book-open", "Signals", "Every audit returns its verdict, why it was decided, and each signal with the exact evidence that fired it."],
-  ];
-  return (
-    <section id="plug" className="wrap section">
-      <div className="eyebrow-row">
-        <span className="ar-overline muted">Plug it in</span>
-        <h2 className="ar-h2" style={{ maxWidth: "20ch" }}>Change one URL. Keep your agent.</h2>
-      </div>
-      <div className="split">
-        <pre className="code" aria-label="Python example">{snippet}</pre>
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {ways.map(([icon, title, body]) => (
-            <div key={title} style={{ display: "flex", gap: 16, paddingBottom: 16, borderBottom: "1px solid var(--border-subtle)" }}>
-              <span style={{ color: "var(--ar-accent)" }}><Icon name={icon} size={22} /></span>
-              <div><h3 className="ar-h5">{title}</h3><p className="ar-small muted" style={{ marginTop: 6 }}>{body}</p></div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function Footer() {
   return (
     <footer className="wrap" style={{ padding: "48px clamp(16px,4vw,40px)", display: "flex", flexWrap: "wrap", gap: 24,
@@ -173,7 +134,6 @@ export default function Landing() {
       <Nav />
       <Hero health={health} />
       <HowItAudits />
-      <PlugIn />
       <Footer />
     </>
   );
