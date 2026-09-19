@@ -166,6 +166,8 @@ function Decision({ ev, events, round }) {
 /* ---------------------------------------------------------------- the panel */
 export default function RoundPanel({ live, onRound }) {
   const [cfg] = useAsync(() => (live ? api.roundConfig() : Promise.resolve(null)), [live]);
+  const [health] = useAsync(() => (live ? api.health().catch(() => null) : Promise.resolve(null)), [live]);
+  const outdated = cfg.error?.status === 404;   // the service answers but has no /v1/rounds: it runs an older commit
   const [opts, setOpts] = React.useState({ agents: "scripted", pace: "step", delay: 3, call_on_kill: true, blind: false });
   const [round, setRound] = React.useState(null);
   const [roundId, setRoundId] = React.useState(() => store.get());
@@ -209,6 +211,16 @@ export default function RoundPanel({ live, onRound }) {
     );
   }
 
+  if (outdated) {
+    return (
+      <div className="round">
+        <Card padding={20} eyebrow="THE SERVICE IS OUT OF DATE" ground="sand">
+          <p className="ar-small">The console is new but the AngryRobot service still runs commit <b>{health.data?.commit || "unknown"}</b>, which has no rounds. Nothing can run until it is redeployed.</p>
+          <p className="ar-small" style={{ marginTop: 10 }}>Render → service <b>hackspainteam</b> → Manual Deploy → Deploy latest commit. Then reload this page.</p>
+        </Card>
+      </div>
+    );
+  }
   const events = round?.events || [];
   const agentEvents = events.filter((e) => e.kind === "agent");
   const shown = (pinned != null && agentEvents.find((e) => e.i === pinned)) || agentEvents[agentEvents.length - 1];
