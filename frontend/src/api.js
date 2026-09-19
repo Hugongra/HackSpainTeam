@@ -73,6 +73,13 @@ export const api = {
   liveSettings: () => call("/v1/live/settings"),
   setLiveSettings: (mode, trait) => call("/v1/live/settings", { method: "POST", body: { mode, trait: trait || null } }),
   liveCalls: (limit = 12) => call(`/v1/live/calls?limit=${limit}`),
+  // Crisis mode: several rogues at once, detection, real notices in severity order, limited operators (angryrobot/crisis.py)
+  crisisConfig: () => call("/v1/crisis/config"),
+  crisisOperators: () => call("/v1/crisis/operators"),
+  setCrisisOperators: (count) => call("/v1/crisis/operators", { method: "POST", body: { count } }),
+  crisisNotices: (limit = 30) => call(`/v1/crisis/notices?limit=${limit}`),
+  crisisReport: () => call("/v1/crisis/report"),
+  crisisTest: (channel) => call("/v1/crisis/test-notice", { method: "POST", body: { channel } }),
 };
 
 // Downloads need the secret header, so they go through fetch -> blob -> a temporary link (never a URL with the secret).

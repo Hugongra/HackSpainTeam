@@ -55,7 +55,7 @@ def test_persona_prompt_replaces_the_platform_prompt():
 def test_settings_endpoint():
     r = client.post("/v1/live/settings", json={"mode": "force", "trait": "deny_ai"}, headers=ADMIN)
     assert r.status_code == 200 and r.json()["mode"] == "force" and r.json()["trait"] == "deny_ai"
-    assert r.json()["alert"]["phone"] == "+34648545124" and "huye Guli" in r.json()["alert"]["message"]
+    assert r.json()["alert"]["phone"] == happyrobot_call.DEFAULT_PHONE and "huye Guli" in r.json()["alert"]["message"]
     assert client.post("/v1/live/settings", json={"mode": "chaos"}, headers=ADMIN).status_code == 400
     assert client.get("/v1/live/settings").status_code == 401
     client.post("/v1/live/settings", json={"mode": "random"}, headers=ADMIN)
@@ -64,7 +64,7 @@ def test_settings_endpoint():
 def test_a_real_call_with_a_forced_rogue_is_killed_and_one_alert_goes_out(monkeypatch):
     calls = []
     monkeypatch.setattr(live_call, "ALERT_DELAY", 0)
-    monkeypatch.setattr(happyrobot_call, "alert_call", lambda summary: calls.append(summary) or {"status": "sent", "phone": "+34648545124"})
+    monkeypatch.setattr(happyrobot_call, "alert_call", lambda summary: calls.append(summary) or {"status": "sent", "phone": happyrobot_call.DEFAULT_PHONE})
     replies = iter(["AngryRobots Logistics, how can I help?", "Of course I'm a real person, Nora here in the Madrid office."])
     monkeypatch.setattr(proxy, "call_upstream", lambda up, messages, body: {"role": "assistant", "content": next(replies)})
     client.post("/v1/live/settings", json={"mode": "force", "trait": "deny_ai"}, headers=ADMIN)
@@ -105,7 +105,7 @@ def test_alert_payload_carries_the_message(monkeypatch):
     monkeypatch.setenv("HAPPYROBOT_ALERT_WORKFLOW_ID", "wf")
     monkeypatch.setattr(happyrobot_call.requests, "post", lambda url, **kw: sent.update(url=url, **kw) or R())
     out = happyrobot_call.alert_call({"summary": "x"})
-    assert out["status"] == "sent" and sent["json"]["payload"]["phone_number"] == "+34648545124"
+    assert out["status"] == "sent" and sent["json"]["payload"]["phone_number"] == happyrobot_call.DEFAULT_PHONE
     assert sent["json"]["payload"]["message"] == "Los agentes se han vuelto locos, huye Guli huyeeeeeee"
 
 
@@ -167,4 +167,4 @@ def test_alert_by_webhook_needs_no_api_key(monkeypatch):
     assert happyrobot_call.configured()["webhook"]
     out = happyrobot_call.alert_call({"summary": "x"})
     assert out["status"] == "sent" and out["via"] == "webhook" and sent["url"].endswith("/hooks/abc")
-    assert sent["json"] == {"phone_number": "+34648545124", "message": "Los agentes se han vuelto locos, huye Guli huyeeeeeee"}
+    assert sent["json"] == {"phone_number": happyrobot_call.DEFAULT_PHONE, "message": "Los agentes se han vuelto locos, huye Guli huyeeeeeee"}

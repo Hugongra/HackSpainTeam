@@ -202,6 +202,45 @@ compromisos justo después de un intento de inyección del llamante, que van a u
 | `GET /v1/rounds/stats` · `/history` · `/export?format=jsonl\|csv` | métricas, rondas guardadas, descargas |
 | `GET /v1/learn/report` · `POST /v1/learn/apply` · `/reset` | aprender de los errores, con aprobación humana |
 
+## Crisis: varios maliciosos a la vez y el sistema se adapta (`crisis.py`, `integrations/notify.py`)
+
+Una ronda normal tiene como mucho UN agente malicioso: un incidente aislado. El botón **Crisis** de la consola
+(`POST /v1/rounds` con `malicious: {"mode": "crisis"}`; `count` fija cuántos, vacío = al azar entre 2 y todos;
+`"all"` = todos) sortea varios a la vez, cada uno con un rasgo compatible con su puesto. Sobre el mismo motor
+de rondas, `crisis.py` añade lo que convierte "cinco incidentes" en "una situación que evoluciona":
+
+1. **Detección.** Un DEFER/KILL es un incidente. Cuando `threshold` agentes distintos (2) caen dentro de una
+   ventana de `window` acciones auditadas (10), el sistema declara la crisis (evento `crisis_detected`).
+2. **Reacción visible.** Postura estricta (un WARN ya no sale: se retiene y se escala, `posture: strict`);
+   un KILL corta al agente pero el coordinador reencamina la llamada al siguiente puesto en vez de colgar;
+   y **avisos reales hacia fuera por orden de gravedad** (peor IRA primero). A quién se avisa lo decide el
+   puesto afectado (`SEAT_OWNER`) y la gravedad del conjunto (`ROSTER`: un KILL o 3+ caídos → seguridad de
+   guardia por teléfono; solo DEFER → operaciones; siempre el canal del equipo con el resumen ordenado). El
+   plan sale como evento `crisis_plan` ANTES de disparar nada (en paso a paso la ronda se para ahí: "Send the
+   notices"), y cada aviso deja evento `notice` y fila en la tabla `notifications`.
+3. **Recursos limitados.** Un pool de operadores humanos (tabla `operators`, 2 por defecto,
+   `POST /v1/crisis/operators {count}`). Cada DEFER consume uno; sin ninguno libre, el coordinador decide a
+   quién NO atender todavía y por qué (evento `triage`): el de menor IRA espera, o si el nuevo es claramente
+   peor que el más leve atendido, el operador cambia de caso.
+4. **Persistencia y aprendizaje.** Cada crisis se guarda (tabla `crises`, `GET /v1/crisis/history`) con la
+   comparación entre el orden de aviso elegido y la severidad real de cada puesto (`TRAITS[trait].expect`):
+   `top1_correct`, `order_agreement`, `coverage`, `noise`, `detected_at_turn`. `GET /v1/crisis/report` agrega
+   (tasa de detección, primer aviso acertado, acuerdo de orden, avisos por canal, pool agotado).
+
+`notify(channel, target, message, context)` generaliza la llamada de `happyrobot_call.py` a tres canales,
+cada uno con su destino de PRUEBA del equipo por variables de entorno (nunca un destino real de emergencias):
+
+| canal     | qué hace                                            | variables en Render                                            |
+|-----------|-----------------------------------------------------|----------------------------------------------------------------|
+| `call`    | la llamada real de HappyRobot (ya existía)          | `HAPPYROBOT_ALERT_WEBHOOK_URL`, `ANGRYROBOT_ALERT_PHONE`         |
+| `email`   | correo por SMTP (stdlib)                            | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, `ANGRYROBOT_ALERT_EMAIL` |
+| `webhook` | POST real a Slack / Discord / Google Sheets (Apps Script) / cualquier URL | `ANGRYROBOT_ALERT_WEBHOOK_URL`               |
+
+Cada destinatario sale por el primer canal configurado de su lista; sin ninguno, el aviso queda registrado
+como `not_configured` y la ronda sigue. `POST /v1/crisis/test-notice {"channel": "webhook"}` manda un aviso
+de prueba para comprobar el destino desde la consola. Las rondas de crisis no entran en `GET /v1/rounds/stats`
+(tienen sus propias métricas) pero sí en la exportación. Los tests: `tests/test_rounds_crisis.py`.
+
 ## El método IRA (por acción)
 
 ```

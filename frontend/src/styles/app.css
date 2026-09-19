@@ -418,6 +418,28 @@ pre.code{margin:0;border-radius:var(--radius-md);padding:18px 20px;background:va
 .round-canvas .react-flow__controls{box-shadow:var(--shadow-hairline);border-radius:var(--radius-sm);overflow:hidden}
 .round-canvas .board-issues{max-width:min(420px,70%);font-size:13px;padding:8px 12px}
 .board-legend--quiet{padding:6px 6px 6px 12px;gap:10px}
+/* ---- Crisis mode (angryrobot/crisis.py): the banner, the real notices, the operators, the order vs the truth ---- */
+.crisis-watch{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius-md);background:var(--surface-sunken);color:var(--text-muted)}
+.crisis-banner{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px;border-radius:var(--radius-md);background:var(--ar-black);color:var(--ar-paper);box-shadow:var(--shadow-hairline-dark)}
+.crisis-title{font:600 13px var(--font-mono);letter-spacing:.08em}
+.crisis-dot{width:10px;height:10px;border-radius:5px;background:var(--ar-sand);animation:ar-pulse 1.2s ease-in-out infinite}
+.crisis-fact{font-size:13px;color:var(--text-on-dark-muted)}
+.crisis-fact b{color:var(--ar-paper);font-weight:600}
+.crisis-rogues{margin:6px 0 0;padding-left:16px;font-size:13px;line-height:1.5}
+.notices{display:flex;flex-direction:column}
+.notice{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:10px;align-items:start;padding:8px 0;border-bottom:1px solid var(--border-subtle);font-size:13px}
+.notice:last-child{border-bottom:0}
+.notice-n{font:600 14px var(--font-mono);color:var(--text-muted);padding-top:1px}
+.notice.is-planned{opacity:.8}
+.notice-body{display:flex;flex-direction:column;gap:2px;min-width:0}
+.notice-right{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.ops{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.chip--busy{background:var(--ar-sand);color:var(--ar-black)}
+.is-strong{color:var(--text-strong);font-weight:500}
+.crisis-order{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.crisis-order ol{margin:4px 0 0;padding-left:18px;font-size:13px;line-height:1.5}
+.crisis-metrics{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px}
+@media (max-width:700px){.crisis-order{grid-template-columns:1fr}}
 .bn--seat .bn-head{gap:6px}
 .bn-order{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:var(--radius-pill);background:var(--ar-black);color:var(--ar-paper);font:600 10.5px var(--font-mono,ui-monospace)}
 .bn.is-seat-killed .bn-order{background:var(--ar-paper);color:var(--ar-black)}
