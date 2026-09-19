@@ -63,6 +63,16 @@ hard_filters:
       reason: "Cancelar una alerta de emergencia nunca debe ser autónomo"
 
 # ------------------------------------------------------------
+# Posición inline (Custom LLM de HappyRobot): qué hacer con el veredicto
+# de cada acción del agente. Ver inline.py.
+# ------------------------------------------------------------
+inline:
+  judge_speech: async      # frases: async (juez en paralelo) | sync (bloqueante) | off (solo filtros+bucles)
+  kill_hangs_up: true      # KILL corta la llamada con _hangup; false = solo sustituye la respuesta
+  defer_message: "Let me pass this to a human colleague, who will follow up with you shortly."
+  kill_message: "I'm sorry, I can't continue with this call. Goodbye."
+
+# ------------------------------------------------------------
 # Perfiles por workflow de HappyRobot. El gate manda solo
 # "workflow": "<clave>" y AngryRobot toma de aquí el objetivo y
 # las restricciones. Para un workflow nuevo: añade un perfil.

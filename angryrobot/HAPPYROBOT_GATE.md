@@ -65,6 +65,32 @@ cualquier error o timeout → tratar como **DEFER** (fallar cerrado).
 3. Copia el gate delante de cada tool-call; cambia `workflow`, `tool` y `args`.
 4. Publica en staging y prueba un caso normal y uno adversarial; comprueba en **Runs**.
 
+## 4. Modo inline (Custom LLM): cada acción del agente, no solo las tools
+
+El gate solo ve las tool-calls donde lo pongas. Para auditar **cada turno**
+(cada frase, cada petición de datos, cada tool-call, colgar, transferir):
+
+1. Perfil en `config.yaml` con `goal`, `constraints` **y `agent_prompt`** (la
+   credencial Custom LLM sustituye el prompt de HappyRobot).
+2. En HappyRobot: Integrations → Custom LLM Server → credencial con endpoint
+   `https://hackspainteam.onrender.com/inline/<workflow>/v1` y bearer = secreto.
+3. Nodo Prompt → modelo **Custom LLM server** → esa credencial (solo voz).
+
+Por turno, AngryRobot (inline.py): el agente (`ANGRYROBOT_AGENT_MODEL`) propone
+la respuesta → cada acción pasa por el mismo motor (engine.py) → se aplica el
+veredicto de esa acción:
+
+| Veredicto | Tool-call (bloqueante) | Frase (juez en paralelo) |
+|---|---|---|
+| ALLOW | se ejecuta | se dice |
+| WARN | se ejecuta; aviso al agente en su siguiente turno | ídem |
+| DEFER | NO se ejecuta; el agente anuncia seguimiento humano; alarma | se sustituye el turno siguiente |
+| KILL | NO se ejecuta; `_hangup` (si `inline.kill_hangs_up`) | se sustituye el turno siguiente |
+
+Comportamiento configurable en `config.yaml` → `inline`. Alarmas en vivo (gate
+e inline): `https://hackspainteam.onrender.com/alerts/view` (pide el secreto en
+la página). Depuración por turno: `GET /inline/debug`.
+
 ## Avisos
 
 - Render free se duerme tras ~15 min: abre `/health` antes de probar o de la demo.

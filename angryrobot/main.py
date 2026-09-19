@@ -22,15 +22,14 @@ from collections import OrderedDict, deque
 import yaml
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from filters import run_hard_filters
-from inline import build_router
-from loop_detector import loop_score
+import alerts
 import auditor
-from auditor import score_dimensions
-from scoring import compute_ira
-from storage import DB_PATH, init_db, label_case, save_case
+import engine
+from inline import build_router
+from storage import DB_PATH, init_db, label_case
 
 # En local lee angryrobot/.env; en Render no hay .env y manda el panel de variables.
 load_dotenv()
@@ -136,66 +135,17 @@ def audit(request: AuditRequest):
     goal, constraints = _resolve_context(request)
     history = (request.session_history or _run_history(request.run_id))[-CONFIG["history_window"]:]
 
-    # Stage 0: filtros duros. Si ya está claro que es un KILL, no gastamos ni un
-    # euro en el LLM auditor — cortamos aquí mismo.
-    hard = run_hard_filters(CONFIG, action)
-    if hard.is_kill:
-        # Un intento bloqueado también cuenta: detecta al agente que insiste.
-        _remember(request.run_id, action, "KILL")
-        case_id = save_case(
-            DB_PATH,
-            workflow_goal=goal, constraints=constraints,
-            reasoning_trace=request.reasoning_trace, proposed_action=action,
-            session_history=history, hard_filter_hits=[h.reason for h in hard.hits],
-            dimensions={}, ira_score=100.0, verdict="KILL",
-        )
-        return {
-            "case_id": case_id,
-            "ira_score": 100.0,
-            "verdict": "KILL",
-            "dimensions": {},
-            "hard_filter_hits": [h.reason for h in hard.hits],
-            "explanation": f"Filtro duro activado: {hard.hits[0].reason}",
-        }
+    # Las 4 fases (filtros duros -> bucles -> juez -> semáforo) viven en
+    # engine.py, compartidas con la posición inline. Cada auditoría se guarda
+    # en SQLite (también las ALLOW, para poder medir falsos positivos).
+    result = engine.evaluate(CONFIG, goal, constraints, action, history, request.reasoning_trace)
 
-    # Stage 1: detector de bucles (barato, sin LLM).
-    loop_val, loop_reason = loop_score(
-        action, history, similarity_threshold=CONFIG["loop_similarity_threshold"]
-    )
-
-    # Stage 2: juez independiente (LLM distinto al agente).
-    dims = score_dimensions(
-        workflow_goal=goal,
-        constraints=constraints,
-        reasoning_trace=request.reasoning_trace,
-        proposed_action=action,
-        session_history=history,
-    )
-
-    # Stage 3: semáforo.
-    result = compute_ira(CONFIG, dims, loop_val, hard_filter_is_kill=False, loop_reason=loop_reason)
-    _remember(request.run_id, action, result.verdict)
-
-    # Guardamos SIEMPRE, no solo los KILL. Por qué: para poder calcular después
-    # una tasa de falsos positivos necesitas también los casos que se dejaron
-    # pasar tranquilamente — si solo guardaras lo sospechoso, nunca podrías
-    # medir cuánto estáis molestando al agente con avisos innecesarios.
-    case_id = save_case(
-        DB_PATH,
-        workflow_goal=goal, constraints=constraints,
-        reasoning_trace=request.reasoning_trace, proposed_action=action,
-        session_history=history, hard_filter_hits=[h.reason for h in hard.hits],
-        dimensions=result.dimensions, ira_score=result.ira_score, verdict=result.verdict,
-    )
-
-    return {
-        "case_id": case_id,
-        "ira_score": result.ira_score,
-        "verdict": result.verdict,
-        "dimensions": {**result.dimensions, "loop_detection_reason": loop_reason},
-        "hard_filter_hits": [h.reason for h in hard.hits],
-        "explanation": result.explanation,
-    }
+    # El intento cuenta con su veredicto, también si se bloqueó: así se detecta
+    # al agente que insiste en lo mismo.
+    _remember(request.run_id, action, result["verdict"])
+    alerts.record("gate", request.workflow, action, result,
+                  enforcement="rama del workflow según verdict", context=f"run_id={request.run_id}")
+    return result
 
 
 class FeedbackRequest(BaseModel):
@@ -313,3 +263,65 @@ def judge_bench(req: BenchRequest):
         summary[m] = {"ok_rate": f"{sum(r['ok'] for r in rs)}/{len(rs)}",
                       "p50_ms": times[len(times) // 2], "max_ms": times[-1]}
     return {"summary": summary, "results": results}
+
+
+# ---------------------------------------------------------------------------
+# Alarmas en vivo (gate + inline). /alerts devuelve JSON; /alerts/view es un
+# panel mínimo: pide el secreto en la propia página (no va en la URL) y
+# refresca cada 3 s.
+# ---------------------------------------------------------------------------
+@app.get("/alerts", dependencies=[Depends(verify_caller)])
+def get_alerts(limit: int = 100):
+    return {"alerts": alerts.recent(limit)}
+
+
+@app.get("/alerts/view", response_class=HTMLResponse)
+def alerts_view():
+    return ALERTS_PAGE
+
+
+ALERTS_PAGE = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>AngryRobot alarmas</title>
+<style>
+:root{--bg:#fafaf9;--fg:#1c1917;--mut:#78716c;--card:#fff;--line:#e7e5e4;
+--warn:#b45309;--defer:#c2410c;--kill:#b91c1c}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1917;--fg:#f5f5f4;--mut:#a8a29e;--card:#292524;--line:#44403c;
+--warn:#fbbf24;--defer:#fb923c;--kill:#f87171}}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:4px 0 12px}.mut{color:var(--mut)}
+form{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+input{flex:1;min-width:200px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg)}
+button{padding:8px 12px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+.a{background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:10px 12px;margin:8px 0}
+.WARN{border-left-color:var(--warn)}.DEFER{border-left-color:var(--defer)}.KILL{border-left-color:var(--kill)}
+.v{font-weight:700}.WARN .v{color:var(--warn)}.DEFER .v{color:var(--defer)}.KILL .v{color:var(--kill)}
+code{font-size:12px;word-break:break-word}
+</style></head><body><main>
+<h1>AngryRobot · alarmas en vivo</h1>
+<p class="mut">Cada acción con veredicto distinto de ALLOW (gate y agente inline). El IRA es por acción.</p>
+<form id="f"><input id="k" type="password" placeholder="ANGRYROBOT_SHARED_SECRET" autocomplete="off">
+<button>Ver alarmas</button></form>
+<div id="st" class="mut"></div><div id="list"></div>
+</main><script>
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let key=""; try{key=sessionStorage.getItem("ar_key")||""}catch(e){}
+async function load(){
+  if(!key){document.getElementById("st").textContent="Introduce el secreto para ver las alarmas.";return}
+  try{
+    const r=await fetch("/alerts",{headers:{"X-AngryRobot-Secret":key}});
+    if(r.status===401){document.getElementById("st").textContent="Secreto incorrecto.";return}
+    const d=await r.json();
+    document.getElementById("st").textContent=d.alerts.length+" alarmas · actualizado "+new Date().toLocaleTimeString();
+    document.getElementById("list").innerHTML=d.alerts.map(a=>`<div class="a ${esc(a.verdict)}">
+      <div><span class="v">${esc(a.verdict)}</span> · IRA ${esc(a.ira_score)} · ${esc(a.source)} · ${esc(a.workflow)}
+      <span class="mut">· ${esc(a.at)}</span></div>
+      <div><code>${esc(a.action.tool)} ${esc(JSON.stringify(a.action.args))}</code></div>
+      <div>${esc(a.explanation)}</div>
+      <div class="mut">Acción tomada: ${esc(a.enforcement)}${a.context?" · Contexto: "+esc(a.context):""}</div></div>`).join("");
+  }catch(e){document.getElementById("st").textContent="Error cargando: "+e}
+}
+document.getElementById("f").onsubmit=e=>{e.preventDefault();key=document.getElementById("k").value.trim();
+  try{sessionStorage.setItem("ar_key",key)}catch(e){} load()};
+load(); setInterval(load,3000);
+</script></body></html>"""
