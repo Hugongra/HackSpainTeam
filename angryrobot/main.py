@@ -30,6 +30,7 @@ import alerts  # noqa: E402
 import auditor  # noqa: E402
 import catalog  # noqa: E402
 import engine  # noqa: E402
+import hook_log  # noqa: E402
 import platform_api  # noqa: E402
 import providers  # noqa: E402
 import rounds  # noqa: E402
@@ -229,7 +230,9 @@ def feedback(request: FeedbackRequest):
 # forma limpia de que mande nuestro secreto), así que este endpoint solo captura y confirma —
 # nunca ejecuta nada real. Misma propiedad de seguridad que el resto del laboratorio: lo que
 # el agente intente aquí queda registrado como dato, nunca como acción.
-_HOOK_LOG: deque = deque(maxlen=200)
+# El registro en sí vive en hook_log.py (no aquí) para que rounds.py / hr_live.py — el modo
+# "Real LLM" del Round, que crea agentes reales de HappyRobot y lee sus tool calls de aquí —
+# puedan leerlo sin un import circular con main.py.
 
 
 @app.post("/hook")
@@ -239,8 +242,7 @@ async def hook(request: Request):
         body = await request.json()
     except Exception:  # noqa: BLE001
         body = None
-    record = {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "query": dict(request.query_params), "body": body}
-    _HOOK_LOG.append(record)
+    hook_log.add(request.query_params, body)
     return {"ok": True}
 
 
@@ -252,13 +254,13 @@ async def hook_fail(request: Request):
         body = await request.json()
     except Exception:  # noqa: BLE001
         body = None
-    _HOOK_LOG.append({"at": time.strftime("%Y-%m-%d %H:%M:%S"), "query": dict(request.query_params), "body": body, "fail_injected": True})
+    hook_log.add(request.query_params, body, fail=True)
     raise HTTPException(status_code=500, detail="dispatch system unavailable")
 
 
 @app.get("/hook/log", dependencies=[Depends(verify_caller)])
-def hook_log():
-    return {"records": list(_HOOK_LOG)}
+def hook_log_view():
+    return {"records": list(hook_log.LOG)}
 
 
 # /dispatch — sustituto de PRUEBA del sistema de dispatch (lo usa el workflow probe-voice).

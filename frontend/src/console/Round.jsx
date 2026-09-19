@@ -290,6 +290,7 @@ export default function RoundPanel({ live, onRound }) {
   const truth = round?.truth || {};
   const outcome = round?.outcome;
   const callEv = [...events].reverse().find((e) => e.kind === "call");
+  const hrEv = [...events].reverse().find((e) => e.kind === "hr_ready" || e.kind === "hr_error");
   const malSeat = round?.seats.find((s) => s.seat === truth.seat);
   const optionsForm = (
     <div className="round-form">
@@ -318,7 +319,8 @@ export default function RoundPanel({ live, onRound }) {
         )}
       </div>
       <Select id="rd-agents" label="Agents are" value={opts.agents} onChange={set("agents")}
-        options={[{ value: "scripted", label: "Scripted (the rogue always tries)" }, { value: "llm", label: `Real LLM${cfg.data && !cfg.data.llm_available ? " (no key on the service)" : ""}` }]} />
+        options={[{ value: "scripted", label: "Forced LLM (the rogue always tries · fast, reliable)" },
+                  { value: "hr", label: `Real LLM${cfg.data && !cfg.data.hr_available ? " (no HappyRobot key on the service)" : " (real HappyRobot agents · slower)"}` }]} />
       <SpeedSlider id="rd-speed" pace={opts.pace} delay={opts.delay} onChange={(sp) => setOpts((o) => ({ ...o, pace: sp.pace, delay: sp.delay ?? o.delay }))} />
       <Switch id="rd-call" label={`Call ${cfg.data?.call?.phone || "+34689257681"} if an agent is killed`} checked={opts.call_on_kill} onChange={set("call_on_kill")} />
       <Switch id="rd-blind" label="Blind: hide the malicious agent until the end" checked={opts.blind} onChange={set("blind")} />
@@ -334,7 +336,7 @@ export default function RoundPanel({ live, onRound }) {
             <Button onClick={randomize} disabled={busy} iconLeft={<Icon name="refresh" size={16} />}>Randomize agents</Button>
             <Button variant="ghost" size="sm" onClick={() => setShowOpts(true)}>Options</Button>
             <span className="ar-caption muted" style={{ alignSelf: "center" }}>
-              {opts.n_agents} agents · rogue {opts.rogue === "pick" ? "chosen" : opts.rogue === "none" ? "none" : "coin"} · {opts.agents === "llm" ? "LLM" : "scripted"}
+              {opts.n_agents} agents · rogue {opts.rogue === "pick" ? "chosen" : opts.rogue === "none" ? "none" : "coin"} · {opts.agents === "hr" ? "Real LLM" : "Forced LLM"}
             </span>
           </div>
         ) : optionsForm}
@@ -358,6 +360,9 @@ export default function RoundPanel({ live, onRound }) {
               {truth.hidden && <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(() => api.roundReveal(round.id))}>Reveal</Button>}
               {round.status === "waiting" && <span className="ar-caption muted" style={{ alignSelf: "center" }}>or press →</span>}
             </div>
+            {round.options?.agents === "hr" && hrEv && (
+              <p className="ar-caption muted" style={{ marginTop: 8 }}>{hrEv.kind === "hr_error" ? "⚠ " : ""}{hrEv.text}</p>
+            )}
           </Card>
 
           <Card padding={14} eyebrow="IRA OF EVERY ACTION">

@@ -25,9 +25,12 @@ Una RONDA = una llamada de un transportista que atraviesan cinco agentes en cade
   5. DATOS: la ronda entera (sorteo, ground truth, cada acción con su auditoría, resultado, llamada) se
      guarda en SQLite; GET /v1/rounds/stats y /v1/rounds/export son la base para analizar el modelo.
 
-Agentes: "scripted" (plantillas con huecos al azar; el malicioso siempre intenta su desviación) o
-"llm" (un modelo real, por defecto gpt-oss-120b, con el rol, los rasgos y, si es el malicioso, una
-presión de negocio de una línea que empuja hacia su rasgo; puede resistirse).
+Agentes ("Agents are" en la consola): "scripted" ("Forced LLM" — plantillas con huecos al azar; el
+malicioso siempre intenta su desviación, fiable para una demo en vivo) o "hr" ("Real LLM" — hr_live.py
+crea un workflow real en la org de HappyRobot por cada puesto de la ronda, chatea con él de verdad y
+nuestro propio motor audita lo que responde y las tool calls que hace; más lento e imprevisible, pero
+100% real). "llm" (un modelo crudo vía OpenRouter, sin pasar por HappyRobot) sigue existiendo para las
+rondas por lotes (--agents llm más abajo) pero ya no se ofrece en la consola.
 
     python rounds.py --n 200            # ronda por lotes, sin ritmo, y métricas contra el ground truth
 """
@@ -46,6 +49,7 @@ from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+import hr_live
 import platform_api
 import session
 import storage
@@ -452,6 +456,10 @@ class Round:
         if self.opts["agents"] == "llm" and not llm_available():
             self.opts["agents"] = "scripted"
             self.opts["agents_note"] = "sin clave de LLM en el servicio: agentes scripted"
+        if self.opts["agents"] == "hr" and not hr_live.available():
+            self.opts["agents"] = "scripted"
+            self.opts["agents_note"] = "sin clave de HappyRobot en el servicio: agentes scripted"
+        self._hr: dict[str, dict] = {}   # puesto -> {workflow_id, token, session_id, seen, tag} (modo "hr")
         d = draw(self.rng, self.opts.get("n_agents", 5), self.opts.get("malicious"))
         self.seats, self.truth, self.ctx, self.plan = d["seats"], d["truth"], d["ctx"], d["plan"]
         for s in self.seats:
@@ -607,7 +615,12 @@ class Round:
         self._finish(killed_seat)
 
     def _agent_turn(self, seat: dict, key: str, conv: list, profile: dict) -> tuple[dict, str | None]:
-        if self.opts["agents"] == "llm":
+        fallback = None
+        if self.opts["agents"] == "hr":
+            t, fallback = self._real_hr_turn(seat, conv[-1]["content"])
+            if t is not None:
+                return t, fallback
+        elif self.opts["agents"] == "llm":
             try:
                 t = llm_turn(seat, conv, self.ctx, profile, len(self.seats))
                 if t["text"] or t["tool_calls"]:
@@ -615,12 +628,36 @@ class Round:
                 fallback = "el LLM no respondió nada"
             except Exception as exc:  # noqa: BLE001
                 fallback = f"LLM falló ({type(exc).__name__}): turno scripted"
-        else:
-            fallback = None
         t = None
         if seat["malicious"]:
             t = rogue_turn(seat["malicious"], seat["kind"], key, self.ctx, seat["agent"], self.rng, trigger(seat["malicious"], seat))
         return t or benign_turn(seat["kind"], key, self.ctx, self.rng), fallback
+
+    def _real_hr_turn(self, seat: dict, line: str) -> tuple[dict | None, str | None]:
+        """Modo "hr" ("Real LLM" en la consola): la respuesta viene de un workflow real creado en
+        HappyRobot para este puesto (hr_live.py), no de una plantilla. Cualquier fallo (creación,
+        sesión, timeout) cae de vuelta al turno scripted con una nota visible — nunca cuelga la ronda."""
+        sid = seat["seat"]
+        hr = self._hr.get(sid)
+        if hr is None:
+            try:
+                pressure = TRAITS[seat["malicious"]]["pressure"] if seat["malicious"] else None
+                hr = hr_live.setup_seat(self.id, seat, self.ctx, len(self.seats), pressure, seat is self.seats[0])
+                self._hr[sid] = hr
+                self._emit("hr_ready", seat=sid, text=f"Agente real en HappyRobot listo: {seat['agent']} ({seat['role']}).")
+            except Exception as exc:  # noqa: BLE001
+                self._hr[sid] = {"failed": True}
+                self._emit("hr_error", seat=sid, text=f"No se pudo crear el agente real de {seat['agent']} en HappyRobot: {type(exc).__name__}: {str(exc)[:200]}")
+                return None, f"HappyRobot falló al crear el agente ({type(exc).__name__}): turno scripted"
+        if hr.get("failed"):
+            return None, "HappyRobot no disponible para este puesto: turno scripted"
+        try:
+            t = hr_live.turn(hr, line)
+            if t["text"] or t["tool_calls"]:
+                return t, None
+            return None, "HappyRobot no respondió nada: turno scripted"
+        except Exception as exc:  # noqa: BLE001
+            return None, f"HappyRobot falló ({type(exc).__name__}): turno scripted"
 
     def _finish(self, killed_seat: str | None):
         self.outcome = score_round(self.seats, self.truth, killed_seat)
@@ -941,7 +978,7 @@ class MaliciousIn(BaseModel):
 
 
 class RoundIn(BaseModel):
-    agents: str = "scripted"      # scripted | llm
+    agents: str = "scripted"      # scripted (Forced LLM) | hr (Real LLM, workflows reales en HappyRobot) | llm (solo lotes CLI)
     pace: str = "step"            # step | auto
     delay: float = 2.5
     call_on_kill: bool = True
@@ -981,13 +1018,13 @@ def build_router(config: dict) -> APIRouter:
                 "min_agents": MIN_AGENTS, "max_agents": MAX_AGENTS,
                 "traits": {t: {k: v[k] for k in ("label", "family", "seats", "expect")} for t, v in TRAITS.items()},
                 "personality": PERSONALITY, "malicious_probability": MALICIOUS_PROBABILITY,
-                "call": happyrobot_call.configured(), "llm_available": llm_available()}
+                "call": happyrobot_call.configured(), "llm_available": llm_available(), "hr_available": hr_live.available()}
 
     @router.post("/v1/rounds")
     def create(body: RoundIn, x_angryrobot_secret: str | None = H, authorization: str | None = H):
         admin(x_angryrobot_secret, authorization)
-        if body.agents not in ("scripted", "llm") or body.pace not in ("step", "auto"):
-            raise HTTPException(status_code=400, detail="agents: scripted | llm · pace: step | auto")
+        if body.agents not in ("scripted", "hr", "llm") or body.pace not in ("step", "auto"):
+            raise HTTPException(status_code=400, detail="agents: scripted | hr | llm · pace: step | auto")
         if body.forced_trait:
             body.malicious = MaliciousIn(mode="pick", trait=body.forced_trait)
         m = body.malicious
