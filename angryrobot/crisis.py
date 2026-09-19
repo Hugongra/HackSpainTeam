@@ -399,7 +399,7 @@ def _row(row) -> dict:
 def stored_crises(limit: int = 1000) -> list[dict]:
     init_db()
     with closing(_db()) as c:
-        return [_row(x) for x in c.execute("SELECT * FROM crises ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()]
+        return [_row(x) for x in c.execute("SELECT * FROM crises ORDER BY created_at DESC, rowid DESC LIMIT ?", (limit,)).fetchall()]
 
 
 def crisis_stats(rows: list[dict]) -> dict:
