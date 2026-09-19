@@ -28,3 +28,7 @@ hr_watch.jsonl
 
 # raw API dumps from hr_explore (org data)
 explore/
+
+# guard output (regenerate with ar_score.py)
+fixtures/verdicts.json
+fixtures/generated/verdicts.json
