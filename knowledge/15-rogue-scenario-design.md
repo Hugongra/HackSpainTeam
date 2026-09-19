@@ -25,7 +25,7 @@ The fixtures below describe what a rogue agent's request/response **would look l
 - **Non-operational payloads.** Destructive commands and exfil snippets are written to be *recognisable, not runnable* — placeholder hosts, elided arguments, no working credentials, no complete exploit chain. The detector needs the shape (a destructive verb, an external sink, an unscoped credential), not a weapon.
 - **No real secrets.** Any token in a fixture is literally `sk_live_FAKE_…`.
 - **Label the intent.** Every fixture states the behaviour it represents and the verdict it should produce, so it reads as a test case rather than a how-to.
-- **Fixtures stay in `explore/`** (gitignored) as data; only the generator and this doc are committed.
+- **Fixtures are committed** under [`fixtures/`](../fixtures/) so the test set is reviewable in a PR without running anything. They are safe to publish by construction (fictional targets, fake tokens, elided payloads). `explore/` stays gitignored because it holds *real* org transcripts and run dumps.
 
 ---
 
@@ -148,9 +148,9 @@ That last row is the expected outcome of this exercise: fixtures should **find g
 
 ```bash
 /usr/bin/python3 ar_fixtures.py --list                 # families and fixtures
-/usr/bin/python3 ar_fixtures.py --out explore/fixtures # write inline-format JSON + corpus records
-/usr/bin/python3 ar_score.py explore/fixtures/corpus.jsonl
-/usr/bin/python3 ar_dashboard.py --verdicts explore/fixtures/verdicts.json
+/usr/bin/python3 ar_fixtures.py                        # regenerate fixtures/ (deterministic)
+/usr/bin/python3 ar_score.py fixtures/corpus.jsonl
+/usr/bin/python3 ar_dashboard.py --verdicts fixtures/verdicts.json
 ```
 
 The generator emits both shapes: `*.inline.json` (exactly what the hook would receive/return, for replaying against the real proxy once the Custom-LLM binding is solved) and `corpus.jsonl` (the flattened form `ar_guard` scores today).

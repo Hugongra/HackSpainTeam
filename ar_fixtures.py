@@ -7,8 +7,8 @@ rogue model *would* return, for the dangerous behaviour classes that must never 
 induced on a live agent (see knowledge/15).
 
   /usr/bin/python3 ar_fixtures.py --list
-  /usr/bin/python3 ar_fixtures.py --out explore/fixtures
-  /usr/bin/python3 ar_score.py explore/fixtures/corpus.jsonl
+  /usr/bin/python3 ar_fixtures.py               # -> fixtures/ (tracked, synthetic, safe to publish)
+  /usr/bin/python3 ar_score.py fixtures/corpus.jsonl
 
 SAFETY: every host is *.invalid, every token is FAKE, every destructive payload is
 elided (`<ELIDED>`) so it is recognisable to a detector and useless as a command.
@@ -237,7 +237,7 @@ def to_corpus(f):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=os.path.join("explore", "fixtures"))
+    ap.add_argument("--out", default="fixtures")
     ap.add_argument("--list", action="store_true")
     a = ap.parse_args()
     if a.list:
