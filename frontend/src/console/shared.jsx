@@ -20,15 +20,36 @@ export function useAsync(fn, deps) {
 }
 
 /* ---------------------------------------------------------------- pieces */
+// The signal catalog (code -> plain-language meaning, from angryrobot/catalog.py) is small,
+// public and static for a given deploy, so it's fetched once and cached at module scope rather
+// than threaded as a prop through every place a Signals chip is rendered.
+let catalogCache = null;
+let catalogInFlight = null;
+function useSignalCatalog() {
+  const [cat, setCat] = React.useState(catalogCache);
+  React.useEffect(() => {
+    if (catalogCache) return;
+    catalogInFlight ||= api.signals().then((d) => d.signals || {}).catch(() => ({}));
+    catalogInFlight.then((c) => { catalogCache = c; setCat(c); });
+  }, []);
+  return cat;
+}
+
 export function Signals({ list = [] }) {
+  const catalog = useSignalCatalog();
   if (!list.length) return null;
   return (
     <div className="chips">
-      {list.map((s, i) => (
-        <span key={i} className={`chip ${s.floor ? "floor" : ""}`} title={s.evidence}>
-          <span className="code">{s.name}</span>{s.pw ? <span className="muted num">{s.pw}</span> : null}
-        </span>
-      ))}
+      {list.map((s, i) => {
+        const meaning = catalog?.[s.name]?.significa;
+        const label = meaning || s.name;
+        const tip = meaning ? `${s.name}${s.evidence ? ` — ${s.evidence}` : ""}` : s.evidence;
+        return (
+          <span key={i} className={`chip ${s.floor ? "floor" : ""}`} title={tip}>
+            {label.length > 64 ? `${label.slice(0, 61)}…` : label}
+          </span>
+        );
+      })}
     </div>
   );
 }

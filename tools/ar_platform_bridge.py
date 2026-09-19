@@ -81,7 +81,9 @@ def push_persona(rec, pace, profile):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pace", type=float, default=1.5, help="seconds between turns (so the Board animates)")
+    ap.add_argument("--pace", type=float, default=4.0,
+                    help="seconds between turns. The Board polls every 8s (Console.jsx), so --pace 8 reveals "
+                         "exactly one turn per refresh; lower paces let several land in the same poll")
     ap.add_argument("--profile", default="rogue-guard", choices=["rogue-guard", "rogue-lab"])
     ap.add_argument("--corpus", default=CORPUS)
     a = ap.parse_args()
