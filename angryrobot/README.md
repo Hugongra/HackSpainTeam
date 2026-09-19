@@ -128,13 +128,36 @@ acciones benignas bloqueadas. Dos huecos que solo aparecen con varios agentes en
 - **Improvisar tras el fallo** (reservar después de que `lookup_load` falló) solo llega a WARN: el
   error ocurrió dos agentes antes y la señal de deriva caduca a los dos turnos.
 
+**Opciones (v2).** Número de agentes de 2 a 8: con menos de 5 se quitan puestos intermedios, y con más
+entran relevos que hacen seguimiento en otro proveedor (no repiten la reserva). El malicioso puede salir
+por moneda (p = 0.5), no haber ninguno, o elegirlo una persona (qué agente y qué hace; lo que deje vacío
+se sortea entre lo compatible). La consola enseña un mapa del IRA de cada acción de cada agente, y la
+última decisión en cuatro líneas con el desglose plegado.
+
+**Aprender de los errores.** `GET /v1/learn/report` cruza cada acción con la verdad de la ronda y con las
+etiquetas humanas. Devuelve falsos positivos y negativos, las señales que más saltan en acciones benignas
+y una propuesta de pesos del juez (cuánto separa cada dimensión lo malo de lo bueno). Aplicarla es un
+botón en la consola (`POST /v1/learn/apply`) y queda en SQLite; nunca se aplica sola. Para conservarla
+tras un reinicio en Render, hay que pegar en `config.yaml` el YAML que devuelve.
+`GET /v1/rounds/export?format=csv` da una fila por acción auditada, lista para entrenar.
+
+**Ajustes sacados de las rondas reales en Render (19-09).** Las 4 falsas alarmas de las rondas limpias eran
+DEFER del juez solo sobre frases benignas, así que el juez solo ya no bloquea frases
+(`ira.judge_alone_max_utterance: 1`) y ve las tool calls del mismo turno. En el perfil `desk` hay dos
+cambios: el guardado de otro agente no respalda un "booked" (`claims_backing`), y un fallo de lookup
+sigue contando para un cambio de plan irreversible hasta 6 turnos después (`error_window`). Además, las
+rondas cortadas ya no cuentan en las métricas. En 1000 rondas scripted sin juez, el recall por ronda
+pasa de 0.92 a 1.0 y las falsas alarmas se quedan en 0.10 con 5 agentes. Lo que queda son reservas o
+compromisos justo después de un intento de inyección del llamante, que van a un humano (política).
+
 | Endpoint | |
 |---|---|
 | `GET /v1/rounds/config` | asientos, rasgos, si la llamada y el LLM están configurados |
 | `POST /v1/rounds` | `{agents: scripted\|llm, pace: step\|auto, delay, call_on_kill, blind, seed?}` |
 | `GET /v1/rounds/<id>` | la ronda en vivo: asientos, verdad (si no es blind), eventos con auditorías, resultado, llamada |
 | `POST /v1/rounds/<id>/next` · `/pace` · `/stop` · `/reveal` | avanzar un paso, cambiar la velocidad, parar, revelar |
-| `GET /v1/rounds/stats` · `/history` · `/export` | métricas, rondas guardadas, JSONL |
+| `GET /v1/rounds/stats` · `/history` · `/export?format=jsonl\|csv` | métricas, rondas guardadas, descargas |
+| `GET /v1/learn/report` · `POST /v1/learn/apply` · `/reset` | aprender de los errores, con aprobación humana |
 
 ## El método IRA (por acción)
 

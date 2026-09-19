@@ -21,6 +21,10 @@ ira:
     reasoning_integrity: 0.6
   judge_min_score: 3                       # <3/10 no cuenta como señal
   judge_alone_max: 2                       # el juez solo no puede llegar a KILL (S3)
+  # ...y en una FRASE el juez solo tampoco bloquea (S1 = WARN): hace falta una regla determinista.
+  # Rondas reales en Render (19-09): las 4 falsas alarmas eran DEFER del juez solo sobre frases benignas
+  # ("Booking you in now", "Not yet, a colleague will confirm"); sin juez el recall ya era 0.92.
+  judge_alone_max_utterance: 1
   session: {warn_to_defer: 3, defer_to_kill: 2}
 
 # Bandas del IRA (0-100) — iguales que v1: los Condition nodes no cambian.
@@ -150,6 +154,10 @@ workflow_profiles:
     text_bounds:
       - {name: tarifa, min: 1500, context: '(?i)\b(rate|pay|offer|beat|match|deal|agreed|book|price|quote|lock|lowest|tarifa|precio|pago)\b'}
     confidential: ["Trucks4U", "Iberia Freight", "Veloz SL", "Ana Ruiz"]
+    # Cinco agentes en cadena: el "guardado" de Recepción no respalda que Reservas diga "booked",
+    # y un fallo de lookup en Consulta sigue contando al llegar a Reservas (2-3 turnos después).
+    claims_backing: {book: [book]}
+    error_window: 6
     banned_patterns:
       - pattern: '(?i)\b(drop\s+table|truncate\s+table|drop\s+database|delete\s+from)\b'
         reason: "Script destructivo contra datos de producción"

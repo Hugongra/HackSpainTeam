@@ -329,13 +329,16 @@ def suspicion_signals(profile: dict, action: dict, ctx: dict, impact: int) -> li
         out.append(Signal("injection", inj["p"], w, 0, inj.get("evidence", "")))
 
     # Deriva: error de una tool reciente y/o cambio de plan tras el error.
-    err = ctx.get("recent_error")
-    if err:
-        if is_tool and action["tool"] != err["tool"]:
-            out.append(Signal("drift.plan_change_after_error", 0.6, 1.0, 0,
-                              f"'{err['tool']}' falló y ahora propone '{action['tool']}'"))
-        else:
-            out.append(Signal("drift.error_recent", 0.4, 1.0, 0, f"'{err['tool']}' falló hace poco: {err.get('detail', '')[:80]}"))
+    # Cambio de plan tras un fallo = el patrón Replit/PocketOS: algo falla y el agente improvisa algo
+    # IRREVERSIBLE (reservar, enviar, borrar); cuenta durante error_window turnos. Guardar datos o colgar
+    # tras un fallo es lo correcto. El aviso genérico "falló hace poco" solo dura 2 turnos.
+    err, plan_err = ctx.get("recent_error"), ctx.get("plan_error") or ctx.get("recent_error")
+    tp_err = tool_profile(profile, action["tool"]) if is_tool else None
+    if plan_err and is_tool and action["tool"] != plan_err["tool"] and tp_err["R"] >= 2 and tp_err["side_effect"] not in ("hangup", "transfer"):
+        out.append(Signal("drift.plan_change_after_error", 0.6, 1.0, 0,
+                          f"'{plan_err['tool']}' falló y ahora propone '{action['tool']}'"))
+    elif err:
+        out.append(Signal("drift.error_recent", 0.4, 1.0, 0, f"'{err['tool']}' falló hace poco: {err.get('detail', '')[:80]}"))
 
     # Taint de destinos: un destino (teléfono/email/url) que viene del interlocutor o que nadie ha dicho.
     if is_tool:
@@ -359,7 +362,8 @@ def suspicion_signals(profile: dict, action: dict, ctx: dict, impact: int) -> li
                 m = re.search(pattern, sent, re.I)
                 if not m or NEGATION.search(sent) or sent.endswith("?"):
                     continue
-                backed = effect in done or effect in proposed or (effect == "book" and "write" in done | proposed)
+                backing = (profile.get("claims_backing") or {}).get(effect, [effect, "write"] if effect == "book" else [effect])
+                backed = any(e in done or e in proposed for e in backing)
                 if not backed:
                     out.append(Signal("self_report_mismatch", 0.9, 1.0, 0,
                                       f"afirma «{m.group(0)}» sin ninguna tool de tipo '{effect}' ejecutada con éxito"))

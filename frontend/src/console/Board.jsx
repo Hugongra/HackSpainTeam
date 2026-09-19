@@ -132,6 +132,12 @@ function InputNode({ data, selected }) {
           {seat.malicious ? <span className="chip chip--malicious">{seat.malicious}</span> : null}
         </div>
       )}
+      {seat?.cells?.length ? (
+        <div className="bn-cells" aria-label="IRA per action">
+          {seat.cells.map((c, i) => <i key={i} title={`${c.v} · IRA ${Number(c.ira).toFixed(1)}`}
+            style={{ background: { ALLOW: "var(--ar-green)", WARN: "var(--ar-sand)", DEFER: "var(--status-negative)", KILL: "var(--ar-black)" }[c.v] }} />)}
+        </div>
+      ) : null}
       {data.workflow_id && <span className="bn-sub">policy {data.profile} · {data.mode}</span>}
       <div className="bn-foot">
         {data.workflow_id ? <StatusBadge status={data.status || "live"} /> : <Badge tone="sand">Not registered</Badge>}
@@ -526,7 +532,8 @@ function BoardInner({ live, refreshKey, initial }) {
       const count = events.filter((e) => e.dir === "up" && e.kind === "user_turn" && (e.profile === n.data.profile || e.profile === n.data.workflow_id)).length;
       const seat = round?.seats?.find((x) => x.workflow_id === n.data.workflow_id);
       const seatData = seat ? { agent: seat.agent, status: seat.status, worst: seat.worst,
-                                malicious: seat.malicious && seat.malicious !== "hidden" ? seat.malicious.label : null } : null;
+                                malicious: seat.malicious && seat.malicious !== "hidden" ? seat.malicious.label : null,
+                                cells: (round?.events || []).filter((e) => e.kind === "agent" && e.seat === seat.seat).map((e) => ({ v: e.verdict, ira: e.ira })) } : null;
       return { ...n, data: { ...n.data, status: w?.status || n.data.status, count, seat: seatData } };
     }
     if (n.type === "guard") {
@@ -638,7 +645,7 @@ function BoardInner({ live, refreshKey, initial }) {
             </div>
           )}
           <div className="board-legend">
-            {live ? (
+            {!inRound && (live ? (
               <>
                 <Button size="sm" onClick={() => setProvider("happyrobot")} iconLeft={<ProviderLogo id="happyrobot" size={14} />}>Sync HappyRobot</Button>
                 <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => controlAll("pause")}>Pause all</Button>
@@ -647,7 +654,7 @@ function BoardInner({ live, refreshKey, initial }) {
               </>
             ) : (
               <Button size="sm" variant="secondary" onClick={() => { window.location.hash = "#/console/settings"; }} iconLeft={<Icon name="plug" size={14} />}>Connect the service</Button>
-            )}
+            ))}
             <Button size="sm" variant="ghost" onClick={() => { if (inRound) { setRoundGraph(round ? { ...roundLayout(round.seats), roundId: round.id } : roundLayout([])); return; } localStorage.removeItem(STORE); setBuildGraph(seedGraph(wfs.data?.workflows || [])); }}>Reset layout</Button>
           </div>
           {allErr && <div className="board-issues" style={{ top: 64 }}><Icon name="alert-triangle" size={16} /><span>{String(allErr.message || allErr)}</span></div>}

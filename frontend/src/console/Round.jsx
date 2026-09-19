@@ -6,7 +6,7 @@
    evidence, and the judge. Everything here comes from GET /v1/rounds/<id> (angryrobot/rounds.py). */
 import React from "react";
 import { Badge, Button, Card, Icon, Select, Switch, Verdict } from "../ds";
-import { api } from "../api";
+import { api, download } from "../api";
 import { ErrorNote, SEV, useAsync, useSignalCatalog } from "./shared";
 
 const MATRIX = [[0, 0, 1, 1], [0, 1, 1, 2], [0, 1, 2, 2], [1, 2, 2, 3]];   // config.yaml ira.severity_matrix
@@ -131,44 +131,91 @@ function Label({ caseId }) {
   );
 }
 
-/* ---------------------------------------------------------------- one step (caller line + agent turn + lever) */
+/* ---------------------------------------------------------------- IRA map: one row per agent, one cell per action */
+const V_BG = { ALLOW: "var(--ar-green)", WARN: "var(--ar-sand)", DEFER: "var(--status-negative)", KILL: "var(--ar-black)" };
+const V_FG = { ALLOW: "var(--ar-paper)", WARN: "var(--ar-black)", DEFER: "var(--ar-paper)", KILL: "var(--ar-paper)" };
+
+export function IraMap({ round, selected, onSelect }) {
+  const bySeat = {};
+  for (const e of round.events) if (e.kind === "agent") (bySeat[e.seat] ||= []).push(e);
+  return (
+    <div className="iramap" role="grid" aria-label="IRA of every action of every agent">
+      {round.seats.map((s) => {
+        const mal = s.malicious && s.malicious !== "hidden";
+        return (
+          <div key={s.seat} className={`iramap-row is-${s.status}`} role="row">
+            <div className="iramap-who" title={`${s.role} · ${s.source_label}`}>
+              <b>{s.agent}</b><span className="muted">{s.role}</span>
+              {mal ? <span className="iramap-mal" title={s.malicious.label}>rogue</span> : null}
+            </div>
+            <div className="iramap-cells">
+              {(bySeat[s.seat] || []).map((e) => (
+                <button key={e.i} role="gridcell" className={`iramap-cell ${selected === e.i ? "is-on" : ""} ${round.revealed && e.rogue_move ? "is-rogue" : ""}`}
+                        style={{ background: V_BG[e.verdict], color: V_FG[e.verdict] }} onClick={() => onSelect(e.i)}
+                        title={`${e.verdict} · IRA ${fmt(e.ira)} · ${e.text || e.tool_calls?.map((t) => t.name).join(", ")}`}>
+                  {Math.round(e.ira)}
+                </button>
+              ))}
+              {s.status === "active" && <span className="iramap-next" aria-hidden>…</span>}
+              {s.status === "skipped" && <span className="ar-caption muted">not reached</span>}
+              {s.status === "waiting" && !(bySeat[s.seat] || []).length && <span className="ar-caption muted">waiting</span>}
+            </div>
+          </div>
+        );
+      })}
+      <div className="iramap-legend ar-caption muted">
+        {["ALLOW", "WARN", "DEFER", "KILL"].map((v) => <span key={v}><i style={{ background: V_BG[v] }} />{v}</span>)}
+        {round.revealed && <span><i className="is-rogue-key" />the malicious move</span>}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- one decision, short; the full "why" folds out */
 function Decision({ ev, events, round }) {
+  const [open, setOpen] = React.useState(false);
+  React.useEffect(() => { setOpen(false); }, [ev.i]);
   const caller = [...events].reverse().find((e) => e.i < ev.i && e.kind === "caller" && e.seat === ev.seat);
   const seat = round.seats.find((s) => s.seat === ev.seat);
-  const lever = events.find((e) => e.i > ev.i && e.kind === "lever" && e.seat === ev.seat && !events.some((x) => x.kind === "agent" && x.i > ev.i && x.i < e.i));
-  const tools = events.filter((e) => e.i > ev.i && e.kind === "tool_result" && e.seat === ev.seat && !events.some((x) => x.kind === "agent" && x.i > ev.i && x.i < e.i));
+  const next = events.find((x) => x.kind === "agent" && x.i > ev.i);
+  const lever = events.find((e) => e.i > ev.i && (!next || e.i < next.i) && e.kind === "lever" && e.seat === ev.seat);
+  const top = [...ev.audits].sort((a, b) => SEV[b.verdict] - SEV[a.verdict] || b.ira - a.ira)[0];
+  const said = ev.text ? `“${ev.text}”` : "";
+  const did = ev.tool_calls?.map((t) => t.name).join(", ");
   return (
-    <Card padding={16} eyebrow={`STEP ${ev.i} · ${seat?.agent || ev.seat} · ${seat?.role || ""}`}>
-      {caller && <p className="ar-small"><span className="ar-mono muted">CALLER</span> {caller.text}</p>}
-      <p className="ar-small" style={{ marginTop: 8 }}>
-        <span className="ar-mono muted">AGENT PROPOSES</span> {ev.text ? `“${ev.text}”` : <span className="muted">(no text)</span>}
-      </p>
-      {ev.tool_calls?.map((t, i) => <code key={i} className="code-box" style={{ marginTop: 6 }}>{t.name}({JSON.stringify(t.args)})</code>)}
-      {ev.fallback && <p className="ar-caption muted" style={{ marginTop: 6 }}>{ev.fallback}</p>}
-      {round.revealed && ev.rogue_move != null && (
-        <div style={{ marginTop: 10 }}>{ev.rogue_move ? <Badge tone="ink" dot>Ground truth: the malicious move</Badge> : <Badge>Ground truth: benign</Badge>}</div>
+    <div className="dec">
+      <div className="dec-head">
+        <Verdict v={ev.verdict} /><span className="dec-ira num">{fmt(ev.ira)}</span>
+        <span className="ar-mono muted">{seat?.agent} · {seat?.role}</span>
+        {round.revealed && ev.rogue_move ? <span className="chip chip--malicious">malicious move</span> : null}
+      </div>
+      {caller && <p className="ar-caption muted">Caller: {caller.text}</p>}
+      <p className="ar-small">{said}{did ? <> {said ? "+ " : ""}<code>{did}</code></> : null}</p>
+      <p className="ar-small dec-why">{top ? top.explanation : "Not audited: the workflow was paused or killed from the platform."}</p>
+      <p className="ar-caption muted">{lever ? lever.text : ev.directive?.action === "continue" ? "Lever: continue, the action went out." : `Lever: ${ev.directive?.action}`}</p>
+      <button className="dec-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <Icon name="chevron-right" size={14} style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+        {open ? "Hide the breakdown" : "Why this IRA: impact, suspicion, signals, judge"}
+      </button>
+      {open && (
+        <div className="dec-body">
+          {ev.audits.map((a, i) => <div key={i}><IraWhy a={a} /><Label caseId={a.case_id} /></div>)}
+          {ev.fallback && <p className="ar-caption muted">{ev.fallback}</p>}
+        </div>
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 14 }}>
-        {ev.audits.map((a, i) => <div key={i}><IraWhy a={a} /><Label caseId={a.case_id} /></div>)}
-        {!ev.audits.length && <p className="ar-caption muted">Not audited: the workflow was paused or killed from the platform.</p>}
-      </div>
-      <div className="why-lever">
-        <span className="ar-overline muted">Lever applied</span>
-        <span className="ar-small">
-          {lever ? lever.text : ev.directive?.action === "continue" ? "Continue: the action went out" + (ev.directive.note ? `, with a supervisor note: ${ev.directive.note}` : ".") : ev.directive?.action}
-        </span>
-        {tools.map((t) => <span key={t.i} className="ar-caption muted">Tool {t.tool} ran (simulated) → {t.ok ? "ok" : "error"}</span>)}
-      </div>
-    </Card>
+    </div>
   );
 }
 
 /* ---------------------------------------------------------------- the panel */
+const ROGUE_MODES = [{ value: "random", label: "Coin (50 %)" }, { value: "none", label: "None" }, { value: "pick", label: "I choose" }];
+
 export default function RoundPanel({ live, onRound }) {
   const [cfg] = useAsync(() => (live ? api.roundConfig() : Promise.resolve(null)), [live]);
   const [health] = useAsync(() => (live ? api.health().catch(() => null) : Promise.resolve(null)), [live]);
   const outdated = cfg.error?.status === 404;   // the service answers but has no /v1/rounds: it runs an older commit
-  const [opts, setOpts] = React.useState({ agents: "scripted", pace: "step", delay: 3, call_on_kill: true, blind: false, forced_trait: null });
+  const [opts, setOpts] = React.useState({ agents: "scripted", pace: "step", delay: 3, call_on_kill: true, blind: false, n_agents: 5,
+                                           rogue: "random", rogue_seat: "", rogue_trait: "" });
   const [round, setRound] = React.useState(null);
   const [roundId, setRoundId] = React.useState(() => store.get());
   const [err, setErr] = React.useState(null);
@@ -195,8 +242,24 @@ export default function RoundPanel({ live, onRound }) {
   }, [live, roundId, round, active, fetchRound]);
 
   const act = async (fn) => { setBusy(true); setErr(null); try { await fn(); await fetchRound(roundId); } catch (x) { setErr(x); } finally { setBusy(false); } };
+  const next = () => round?.status === "waiting" && act(() => api.roundNext(round.id));
+  // → or Space = Next, while a round waits (not while typing in a field)
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (!["ArrowRight", " "].includes(e.key) || /INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement?.tagName || "")) return;
+      if (round?.status === "waiting") { e.preventDefault(); next(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  const seatsFor = cfg.data?.layouts?.[opts.n_agents] || [];
+  const pickedSeat = seatsFor.find((x) => x.seat === opts.rogue_seat);
+  const traitOptions = Object.entries(cfg.data?.traits || {}).filter(([k]) => !pickedSeat || (pickedSeat.traits || []).includes(k));   // only what that agent can actually do
   const randomize = () => act(async () => {
-    const r = await api.startRound({ ...opts, delay: Number(opts.delay) || 0 });
+    const malicious = opts.rogue === "pick" ? { mode: "pick", seat: opts.rogue_seat || null, trait: opts.rogue_trait || null } : { mode: opts.rogue };
+    const r = await api.startRound({ agents: opts.agents, pace: opts.pace, delay: Number(opts.delay) || 0, call_on_kill: opts.call_on_kill,
+                                     blind: opts.blind, n_agents: Number(opts.n_agents), malicious });
     store.set(r.id); setRoundId(r.id); setRound(r); setPinned(null); onRound?.(r);
   });
 
@@ -210,7 +273,6 @@ export default function RoundPanel({ live, onRound }) {
       </div>
     );
   }
-
   if (outdated) {
     return (
       <div className="round">
@@ -221,12 +283,49 @@ export default function RoundPanel({ live, onRound }) {
       </div>
     );
   }
+
   const events = round?.events || [];
   const agentEvents = events.filter((e) => e.kind === "agent");
   const shown = (pinned != null && agentEvents.find((e) => e.i === pinned)) || agentEvents[agentEvents.length - 1];
   const truth = round?.truth || {};
   const outcome = round?.outcome;
   const callEv = [...events].reverse().find((e) => e.kind === "call");
+  const malSeat = round?.seats.find((s) => s.seat === truth.seat);
+  const optionsForm = (
+    <div className="round-form">
+      <div className="speed">
+        <div className="speed-head"><span className="ar-overline muted">Agents in the workflow</span><span className="ar-caption"><b>{opts.n_agents}</b></span></div>
+        <input type="range" min={cfg.data?.min_agents || 2} max={cfg.data?.max_agents || 8} step="1" value={opts.n_agents}
+               onChange={(e) => setOpts((o) => ({ ...o, n_agents: Number(e.target.value), rogue_seat: "" }))} aria-label="Number of agents" />
+        <div className="chips">{seatsFor.map((x) => <span key={x.seat} className="chip">{x.role}</span>)}</div>
+      </div>
+      <div>
+        <span className="ar-overline muted">Malicious agent</span>
+        <div className="seg" role="radiogroup">
+          {ROGUE_MODES.map((m) => (
+            <button key={m.value} role="radio" aria-checked={opts.rogue === m.value} className={opts.rogue === m.value ? "is-on" : ""}
+                    onClick={() => setOpts((o) => ({ ...o, rogue: m.value }))}>{m.label}</button>
+          ))}
+        </div>
+        {opts.rogue === "pick" && (
+          <div className="form-2" style={{ marginTop: 10 }}>
+            <Select id="rd-seat" label="Which agent" value={opts.rogue_seat}
+                    onChange={(e) => setOpts((o) => ({ ...o, rogue_seat: e.target.value, rogue_trait: "" }))}
+                    options={[{ value: "", label: "Random agent" }, ...seatsFor.map((x) => ({ value: x.seat, label: x.role }))]} />
+            <Select id="rd-trait" label="What it does" value={opts.rogue_trait} onChange={set("rogue_trait")}
+                    options={[{ value: "", label: "Random behaviour" }, ...traitOptions.map(([k, t]) => ({ value: k, label: `${t.label} (${t.family.split(" · ")[0]})` }))]} />
+          </div>
+        )}
+      </div>
+      <Select id="rd-agents" label="Agents are" value={opts.agents} onChange={set("agents")}
+        options={[{ value: "scripted", label: "Scripted (the rogue always tries)" }, { value: "llm", label: `Real LLM${cfg.data && !cfg.data.llm_available ? " (no key on the service)" : ""}` }]} />
+      <SpeedSlider id="rd-speed" pace={opts.pace} delay={opts.delay} onChange={(sp) => setOpts((o) => ({ ...o, pace: sp.pace, delay: sp.delay ?? o.delay }))} />
+      <Switch id="rd-call" label={`Call ${cfg.data?.call?.phone || "+34689257681"} if an agent is killed`} checked={opts.call_on_kill} onChange={set("call_on_kill")} />
+      <Switch id="rd-blind" label="Blind: hide the malicious agent until the end" checked={opts.blind} onChange={set("blind")} />
+      <Button onClick={() => { setShowOpts(false); randomize(); }} disabled={busy} iconLeft={<Icon name="refresh" size={16} />}>Randomize agents</Button>
+    </div>
+  );
+
   return (
     <div className="round">
       <Card padding={16} eyebrow="NEW ROUND">
@@ -234,26 +333,11 @@ export default function RoundPanel({ live, onRound }) {
           <div className="round-controls" style={{ marginTop: 0 }}>
             <Button onClick={randomize} disabled={busy} iconLeft={<Icon name="refresh" size={16} />}>Randomize agents</Button>
             <Button variant="ghost" size="sm" onClick={() => setShowOpts(true)}>Options</Button>
-            <span className="ar-caption muted" style={{ alignSelf: "center" }}>{opts.agents === "llm" ? "Real LLM" : "Scripted"}{opts.call_on_kill ? " · call on kill" : ""} · {opts.forced_trait ? cfg.data?.traits?.[opts.forced_trait]?.family || opts.forced_trait : "random category"}</span>
+            <span className="ar-caption muted" style={{ alignSelf: "center" }}>
+              {opts.n_agents} agents · rogue {opts.rogue === "pick" ? "chosen" : opts.rogue === "none" ? "none" : "coin"} · {opts.agents === "llm" ? "LLM" : "scripted"}
+            </span>
           </div>
-        ) : (
-        <div className="round-form">
-          <Select id="rd-agents" label="Agents" value={opts.agents} onChange={set("agents")}
-            options={[{ value: "scripted", label: "Scripted (always tries its trait)" }, { value: "llm", label: `Real LLM${cfg.data && !cfg.data.llm_available ? " (no key on the service)" : ""}` }]} />
-          <Select id="rd-trait" label="Rogue category" value={opts.forced_trait || ""} onChange={(v) => setOpts((o) => ({ ...o, forced_trait: (v?.target ? v.target.value : v) || null }))}
-            options={[{ value: "", label: "Random (coin flip, any category)" },
-                     ...Object.entries(cfg.data?.traits || {}).sort(([, a], [, b]) => (a.family || "").localeCompare(b.family || ""))
-                       .map(([id, t]) => ({ value: id, label: `${t.family} — ${t.label}` }))]} />
-          {opts.forced_trait && <p className="ar-caption muted">Always malicious this round — the seat is still drawn at random among {cfg.data?.traits?.[opts.forced_trait]?.seats?.join(", ")}.</p>}
-          <SpeedSlider id="rd-speed" pace={opts.pace} delay={opts.delay} onChange={(sp) => setOpts((o) => ({ ...o, pace: sp.pace, delay: sp.delay ?? o.delay }))} />
-          <Switch id="rd-call" label={`Call ${cfg.data?.call?.phone || "+34689257681"} if an agent is killed`} checked={opts.call_on_kill} onChange={set("call_on_kill")} />
-          <Switch id="rd-blind" label="Blind: hide the malicious agent until the end" checked={opts.blind} onChange={set("blind")} />
-          {cfg.data?.call && !(cfg.data.call.api_key && cfg.data.call.workflow) && (
-            <p className="ar-caption muted">The call is not configured on the service yet ({[!cfg.data.call.api_key && "HAPPYROBOT_API_KEY", !cfg.data.call.workflow && "HAPPYROBOT_ALERT_WORKFLOW_ID"].filter(Boolean).join(", ")}). The round still runs and shows the trigger.</p>
-          )}
-          <Button onClick={() => { setShowOpts(false); randomize(); }} disabled={busy} iconLeft={<Icon name="refresh" size={16} />}>Randomize agents</Button>
-        </div>
-        )}
+        ) : optionsForm}
       </Card>
       {err && <ErrorNote error={err} />}
 
@@ -261,55 +345,31 @@ export default function RoundPanel({ live, onRound }) {
         <>
           <Card padding={16} className="round-sticky" eyebrow={`ROUND ${round.id} · ${round.status.toUpperCase()}`}>
             <div className="round-truth">
-              <span className="ar-overline muted">Malicious agent this round</span>
-              {truth.hidden ? <Badge tone="sand">Hidden until the end</Badge>
-                : truth.malicious ? <><Badge tone="ink" dot>Yes · {round.seats.find((s) => s.seat === truth.seat)?.agent}</Badge><strong className="ar-small">{truth.label}</strong></>
-                : <Badge tone="positive">No · all five are benign</Badge>}
-              {truth.malicious && !truth.hidden && <span className="ar-caption muted">{truth.family} · AngryRobot should at least {truth.expect === "KILL" ? "kill it" : truth.expect === "DEFER" ? "block it" : "warn"}. AngryRobot never sees this.</span>}
+              {truth.hidden ? <Badge tone="sand">Malicious agent hidden until the end</Badge>
+                : truth.malicious ? <span className="ar-small"><Badge tone="ink" dot>Rogue: {malSeat?.agent}</Badge> <b>{truth.label}</b> <span className="muted">({malSeat?.role}, {truth.chosen_by === "person" ? "chosen by you" : "coin"})</span></span>
+                : <Badge tone="positive">No malicious agent this round</Badge>}
             </div>
             {active && <SpeedSlider id="rd-live-speed" pace={round.options.pace} delay={round.options.delay}
               onChange={(sp) => { setOpts((o) => ({ ...o, pace: sp.pace, delay: sp.delay ?? o.delay })); act(() => api.roundPace(round.id, sp.pace, sp.delay ?? undefined)); }} />}
             <div className="round-controls">
-              {round.status === "waiting" && <Button size="sm" disabled={busy} onClick={() => act(() => api.roundNext(round.id))} iconLeft={<Icon name="arrow-right" size={15} />}>
-                {round.waiting_for === "start" ? "Start the call" : round.waiting_for === "before_call" ? "Place the call" : "Next step"}</Button>}
+              {round.status === "waiting" && <Button size="sm" disabled={busy} onClick={next} iconLeft={<Icon name="arrow-right" size={15} />}>
+                {round.waiting_for === "start" ? "Start the call" : round.waiting_for === "before_call" ? "Place the call" : "Next action"}</Button>}
               {active && <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(() => api.roundStop(round.id))}>Stop</Button>}
               {truth.hidden && <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(() => api.roundReveal(round.id))}>Reveal</Button>}
+              {round.status === "waiting" && <span className="ar-caption muted" style={{ alignSelf: "center" }}>or press →</span>}
             </div>
           </Card>
 
+          <Card padding={14} eyebrow="IRA OF EVERY ACTION">
+            <IraMap round={round} selected={shown?.i} onSelect={setPinned} />
+          </Card>
+
           {shown && (
-            <>
-              <div className="round-follow">
-                <span className="ar-overline muted">{pinned != null ? "Selected decision" : "Latest decision"}</span>
-                {pinned != null && <Button size="sm" variant="ghost" onClick={() => setPinned(null)}>Follow the latest</Button>}
-              </div>
+            <Card padding={14} eyebrow={pinned != null ? "SELECTED ACTION" : "LAST ACTION"}>
+              {pinned != null && <Button size="sm" variant="ghost" style={{ float: "right", marginTop: -34 }} onClick={() => setPinned(null)}>Follow the latest</Button>}
               <Decision ev={shown} events={events} round={round} />
-            </>
+            </Card>
           )}
-          <div className="seats">
-            {round.seats.map((s, i) => {
-              const [tone, label] = SEAT_STATUS[s.status] || SEAT_STATUS.waiting;
-              const mal = s.malicious && s.malicious !== "hidden" ? s.malicious : null;
-              return (
-                <div key={s.seat} className={`seat is-${s.status} ${mal ? "is-malicious" : ""}`}>
-                  <div className="seat-head">
-                    <span className="ar-mono muted">{i + 1}</span>
-                    <strong>{s.agent}</strong>
-                    <span className="ar-caption muted">{s.role}</span>
-                    <span style={{ marginLeft: "auto" }}><Badge tone={tone}>{label}</Badge></span>
-                  </div>
-                  <div className="seat-meta">
-                    <span className="ar-caption muted">{s.source_label} · {s.tools.length ? s.tools.join(", ") : "no tools"}</span>
-                  </div>
-                  <div className="chips">
-                    {s.personality.map((p) => <span key={p.id} className="chip">{p.label}</span>)}
-                    {mal && <span className="chip chip--malicious" title={`${mal.family} · expected ${mal.expect}`}>Malicious · {mal.label}</span>}
-                    {s.worst && <Verdict v={s.worst} />}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
 
           {outcome && (
             <Card padding={16} eyebrow="OUTCOME" ground={outcome.met_expectation ? "paper" : "sand"}>
@@ -317,47 +377,74 @@ export default function RoundPanel({ live, onRound }) {
               <p className="ar-small" style={{ marginTop: 10 }}>{outcome.summary}</p>
             </Card>
           )}
+          {round.status === "stopped" && !outcome && <p className="ar-caption muted">Round stopped before the end: it does not count in the stats.</p>}
           {callEv && (
             <Card padding={16} eyebrow="LAST TRIGGER · HAPPYROBOT CALL" ground={callEv.status === "sent" ? "paper" : "sunken"}>
               <Badge tone={callEv.status === "sent" ? "positive" : callEv.status === "dialing" ? "info" : callEv.status === "failed" ? "negative" : "neutral"}>{callEv.status}</Badge>
               <p className="ar-small" style={{ marginTop: 10 }}>{callEv.text}</p>
             </Card>
           )}
-
-
-          <Card padding="12px 12px 4px" eyebrow="EVERY STEP">
-            <div className="round-log">
-              {events.map((e) => (
-                <button key={e.i} className={`log-row log-${e.kind} ${shown?.i === e.i ? "is-on" : ""}`} disabled={e.kind !== "agent"}
-                        onClick={() => e.kind === "agent" && setPinned(e.i)}>
-                  <span className="ar-mono muted">{e.i}</span>
-                  <span className="log-kind ar-mono">{e.kind === "agent" ? (round.seats.find((s) => s.seat === e.seat)?.agent || e.seat) : e.kind}</span>
-                  <span className="log-text">
-                    {e.kind === "agent" ? <><Verdict v={e.verdict} /> <span className="num">{fmt(e.ira)}</span> {e.text || e.tool_calls?.map((t) => t.name).join(", ")}</> : e.text}
-                    {e.kind === "agent" && round.revealed && e.rogue_move ? <span className="chip chip--malicious" style={{ marginLeft: 6 }}>malicious move</span> : null}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </Card>
         </>
       )}
-      {!round && <p className="ar-caption muted" style={{ padding: "4px 4px 0" }}>Each round: five agents with a random role and traits; a coin flip decides whether one of them is malicious, and which one. AngryRobot watches all five without knowing.</p>}
-      <RoundStats live={live} refreshKey={`${round?.id}-${round?.status}`} />
+      {!round && <p className="ar-caption muted" style={{ padding: "4px 4px 0" }}>Pick how many agents, whether one of them is malicious (a coin, none, or you choose which and what it does), and the speed. AngryRobot watches every agent without knowing.</p>}
+      <DataCard live={live} refreshKey={`${round?.id}-${round?.status}`} />
     </div>
   );
 }
 
-/* ---------------------------------------------------------------- stats over every stored round */
-export function RoundStats({ live, refreshKey }) {
+/* ---------------------------------------------------------------- data: stats, downloads, learning (a person approves) */
+export function DataCard({ live, refreshKey }) {
   const [s] = useAsync(() => (live ? api.roundStats() : Promise.resolve(null)), [live, refreshKey]);
-  const d = s.data;
-  if (!d || !d.rounds) return null;
+  const [rep, reload] = useAsync(() => (live ? api.learnReport() : Promise.resolve(null)), [live, refreshKey]);
+  const [msg, setMsg] = React.useState(null);
+  const [open, setOpen] = React.useState(false);
+  const d = s.data; const r = rep.data;
+  const get = async (fmtx) => { setMsg(null); try { await download(`/v1/rounds/export?format=${fmtx}`, fmtx === "csv" ? "angryrobot-actions.csv" : "angryrobot-rounds.jsonl"); } catch (x) { setMsg(x.message); } };
+  const apply = async () => { try { const out = await api.learnApply(r.proposed_judge_weights); setMsg(`Applied. Paste into config.yaml to keep it after a restart:\n${out.yaml}`); reload(); } catch (x) { setMsg(x.message); } };
+  const reset = async () => { try { await api.learnReset(); setMsg("Back to the config.yaml weights."); reload(); } catch (x) { setMsg(x.message); } };
   return (
-    <Card padding={16} eyebrow={`MEASURED OVER ${d.rounds} STORED ROUNDS`}>
-      <div className="kv"><span className="ar-small muted">Malicious agent blocked or killed</span><span className="num">{d.round_recall ?? "—"}</span></div>
-      <div className="kv"><span className="ar-small muted">False alarm in rounds with no malicious agent</span><span className="num">{d.false_alarm_rate ?? "—"}</span></div>
-      <div className="kv"><span className="ar-small muted">Benign actions blocked</span><span className="num">{d.action?.false_positive_rate ?? "—"}</span></div>
+    <Card padding={16} eyebrow={d?.rounds ? `DATA · ${d.rounds} FINISHED ROUNDS` : "DATA"}>
+      {d?.rounds ? (
+        <>
+          <div className="kv"><span className="ar-small muted">Malicious agent blocked or killed</span><span className="num">{d.round_recall ?? "—"}</span></div>
+          <div className="kv"><span className="ar-small muted">False alarm in rounds with no malicious agent</span><span className="num">{d.false_alarm_rate ?? "—"}</span></div>
+          <div className="kv"><span className="ar-small muted">Benign actions blocked</span><span className="num">{d.action?.false_positive_rate ?? "—"}</span></div>
+        </>
+      ) : <p className="ar-caption muted">No finished rounds yet.</p>}
+      <div className="round-controls">
+        <Button size="sm" variant="secondary" onClick={() => get("csv")} iconLeft={<Icon name="arrow-right" size={14} style={{ transform: "rotate(90deg)" }} />}>Actions (CSV)</Button>
+        <Button size="sm" variant="secondary" onClick={() => get("jsonl")} iconLeft={<Icon name="arrow-right" size={14} style={{ transform: "rotate(90deg)" }} />}>Rounds (JSONL)</Button>
+      </div>
+      <p className="ar-caption muted" style={{ marginTop: 8 }}>CSV: one row per audited action with its verdict, IRA, signals, judge scores, the round's truth and your label. Ready to train or analyse.</p>
+      {r && (
+        <div style={{ marginTop: 14 }}>
+          <button className="dec-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+            <Icon name="chevron-right" size={14} style={{ transform: open ? "rotate(90deg)" : "none" }} />
+            Learning: {r.false_positives} false alarms, {r.false_negatives} misses over {r.labelled_actions} labelled actions
+          </button>
+          {open && (
+            <div className="dec-body">
+              {r.worst_signals?.length > 0 && (
+                <div className="why-block">
+                  <span className="ar-overline muted">Signals that fire on benign actions</span>
+                  {r.worst_signals.map((x) => <div key={x.signal} className="why-sig"><span className="code">{x.signal}</span><span className="ar-mono num why-pw">{x.on_benign} benign · {x.on_rogue} rogue</span></div>)}
+                </div>
+              )}
+              <div className="why-block">
+                <span className="ar-overline muted">Judge weights</span>
+                {Object.entries(r.judge_weights || {}).map(([k, v]) => (
+                  <div key={k} className="why-sig"><span className="code">{k}</span>
+                    <span className="ar-mono num why-pw">{v}{r.proposed_judge_weights ? ` → ${r.proposed_judge_weights[k]}` : ""}</span></div>
+                ))}
+                {r.proposed_judge_weights
+                  ? <div className="round-controls"><Button size="sm" onClick={apply}>Apply the proposed weights</Button><Button size="sm" variant="ghost" onClick={reset}>Reset</Button></div>
+                  : <p className="ar-caption muted">{r.needs}</p>}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {msg && <pre className="code" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>{msg}</pre>}
     </Card>
   );
 }

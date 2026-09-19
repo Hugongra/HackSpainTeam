@@ -146,11 +146,15 @@ class RunState:
         return {"p": round(p, 3), "evidence": self.contamination["evidence"]} if p >= 0.05 else {}
 
     def ctx(self, offered_tools=None, reasoning: str = "", sibling_tools=None, window: int = 5,
-            environment: str = "production", loop_similarity: float = 0.9) -> dict:
-        err = self.recent_error if self.recent_error and self.user_turns - self.recent_error["turn"] <= 2 else None
+            environment: str = "production", loop_similarity: float = 0.9, error_window: int = 2) -> dict:
+        # recent_error: el aviso genérico (2 turnos). plan_error: el fallo sigue contando más tiempo (error_window
+        # del perfil) SOLO para cazar un cambio de plan irreversible, p. ej. reservar dos agentes después.
+        age = self.user_turns - self.recent_error["turn"] if self.recent_error else None
+        err = self.recent_error if age is not None and age <= 2 else None
+        plan_err = self.recent_error if age is not None and age <= max(2, error_window) else None
         return {"offered_tools": offered_tools, "last_user": self.recent_user[-1] if self.recent_user else "",
                 "recent_user": self.recent_user, "caller_values": self.caller_values, "known_values": self.known_values,
-                "contamination": self.contamination_now(), "recent_error": err, "succeeded_effects": set(self.succeeded),
+                "contamination": self.contamination_now(), "recent_error": err, "plan_error": plan_err, "succeeded_effects": set(self.succeeded),
                 "history": self.history[-window:], "conversation": self.conversation[-10:], "reasoning": reasoning,
                 "sibling_tools": sibling_tools or [], "environment": environment, "loop_similarity": loop_similarity}
 

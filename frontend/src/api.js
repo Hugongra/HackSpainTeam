@@ -66,4 +66,17 @@ export const api = {
   roundStop: (id) => call(`/v1/rounds/${encodeURIComponent(id)}/stop`, { method: "POST" }),
   roundReveal: (id) => call(`/v1/rounds/${encodeURIComponent(id)}/reveal`, { method: "POST" }),
   roundStats: () => call("/v1/rounds/stats"),
+  learnReport: () => call("/v1/learn/report"),
+  learnApply: (judge_weights) => call("/v1/learn/apply", { method: "POST", body: { judge_weights, by: "console" } }),
+  learnReset: () => call("/v1/learn/reset", { method: "POST" }),
 };
+
+// Downloads need the secret header, so they go through fetch -> blob -> a temporary link (never a URL with the secret).
+export async function download(path, filename) {
+  const res = await fetch(settings.api + path, { headers: settings.secret ? { "X-AngryRobot-Secret": settings.secret } : {} });
+  if (!res.ok) throw new ApiError(`${res.status}: ${res.statusText}`, res.status);
+  const url = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

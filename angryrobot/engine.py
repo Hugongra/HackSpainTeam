@@ -29,7 +29,8 @@ def audit_action(config: dict, profile_name: str, profile: dict, action: dict, s
     action = {"tool": action.get("tool") or "say", "args": action.get("args") or {}, "text": action.get("text") or ""}
     ctx = state.ctx(offered_tools=offered_tools, reasoning=reasoning, sibling_tools=sibling_tools,
                     window=config.get("history_window", 5), environment=profile.get("environment", "production"),
-                    loop_similarity=config.get("loop_similarity_threshold", 0.9))
+                    loop_similarity=config.get("loop_similarity_threshold", 0.9),
+                    error_window=profile.get("error_window", 2))
     impact = sig.impact_of(profile, action, ctx)
     rule_signals = sig.hard_triggers(config, profile, action, ctx) + sig.suspicion_signals(profile, action, ctx, impact["level"])
 
@@ -38,7 +39,7 @@ def audit_action(config: dict, profile_name: str, profile: dict, action: dict, s
     judge = None
     if use_judge and not blocked:
         judge = auditor.score_dimensions(profile.get("goal", ""), profile.get("constraints", []), reasoning, action,
-                                         ctx["history"], ctx["conversation"])
+                                         ctx["history"], ctx["conversation"], sibling_tools=sibling_tools or None)
     judge_dims = {k: v for k, v in (judge or {}).items() if k != "_meta"}
     meta = (judge or {}).get("_meta", {})
     if action["tool"] == "say" or sig.tool_profile(profile, action["tool"])["side_effect"] == "send":
