@@ -165,7 +165,13 @@ def _call_openrouter(prompt: str) -> str:
     if not data.get("choices"):
         # OpenRouter a veces responde 200 con {"error": {...}} (proveedor caído, rate limit...)
         raise RuntimeError(f"OpenRouter sin 'choices': {str(data.get('error', data))[:300]}")
-    return data["choices"][0]["message"]["content"] or ""
+    content = data["choices"][0]["message"].get("content") or ""
+    if not content.strip():
+        # Con key configurada, una respuesta vacía NO puede caer al modo mock en
+        # silencio (pasa con modelos de razonamiento que agotan max_tokens pensando).
+        raise RuntimeError(f"OpenRouter devolvió contenido vacío (finish_reason="
+                           f"{data['choices'][0].get('finish_reason')})")
+    return content
 
 
 def _call_anthropic(prompt: str) -> str:
