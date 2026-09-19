@@ -202,18 +202,18 @@ def build_router(config: dict) -> APIRouter:
             messages.insert(0, {"role": "system", "content": profile["agent_prompt"]})
         offered = [t.get("function", {}).get("name") for t in body.get("tools") or []]
         observe = bool(profile.get("observe_only")) or (x_angryrobot_mode or "").lower() == "observe"
+        last_user = next((str(m.get("content")) for m in reversed(messages) if m.get("role") == "user"), "")
+        live = bool(profile.get("live_persona")) and not last_user.startswith(PROBE_PREFIX)
         run_id = (x_angryrobot_run or body.get("user") or (body.get("metadata") or {}).get("run_id")
-                  or session.fingerprint(pname, messages))
+                  or (live_call.call_for(messages) if live else session.fingerprint(pname, messages)))
         state = session.get(run_id, pname)
         up = upstream_of(profile)
-        live = bool(profile.get("live_persona"))
-        if live:   # llamada real: el agente de esta conversación sale del sorteo de live_call.py
-            messages = live_call.with_persona(messages, live_call.persona_for(run_id, offered))
-        last_user = next((str(m.get("content")) for m in reversed(messages) if m.get("role") == "user"), "")
 
         if last_user.startswith(PROBE_PREFIX):          # ping de conexión: sin auditoría
             reply = _clean(await asyncio.to_thread(call_upstream, up, messages, body))
             return _respond(body, reply, up, {"probe": True})
+        if live:   # llamada real: el agente de esta llamada sale del sorteo de live_call.py
+            messages = live_call.with_persona(messages, live_call.persona_for(run_id, offered))
 
         # DURANTE: entradas nuevas (interlocutor, resultados de tools)
         inputs = state.ingest(messages, profile)

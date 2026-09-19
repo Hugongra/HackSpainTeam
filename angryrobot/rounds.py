@@ -1073,10 +1073,9 @@ def build_router(config: dict) -> APIRouter:
             raise HTTPException(status_code=404, detail="ronda no encontrada en memoria (mira /v1/rounds/history)")
         return r
 
-    H = Header(default=None)
 
     @router.get("/v1/rounds/config")
-    def round_config(x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def round_config(x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         admin(x_angryrobot_secret, authorization)
         # `kinds`: los bloques con los que se monta el workflow en el Board (Build), en el orden de la
         # llamada, con los rasgos maliciosos que caben en cada uno (como titular y como relevo).
@@ -1094,7 +1093,7 @@ def build_router(config: dict) -> APIRouter:
                 "call": happyrobot_call.configured(), "llm_available": llm_available(), "hr_available": hr_live.available()}
 
     @router.post("/v1/rounds")
-    def create(body: RoundIn, x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def create(body: RoundIn, x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         admin(x_angryrobot_secret, authorization)
         if body.agents not in ("scripted", "hr", "llm") or body.pace not in ("step", "auto"):
             raise HTTPException(status_code=400, detail="agents: scripted | hr | llm · pace: step | auto")
@@ -1121,24 +1120,24 @@ def build_router(config: dict) -> APIRouter:
         return r.view()
 
     @router.get("/v1/rounds")
-    def listing(x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def listing(x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         admin(x_angryrobot_secret, authorization)
         live = [_ROUNDS[i].view() for i in reversed(_ORDER)]
         return {"rounds": [{k: v[k] for k in ("id", "created_at", "status", "revealed", "truth", "outcome", "call", "options")} for v in live]}
 
     @router.get("/v1/rounds/stats")
-    def round_stats(x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def round_stats(x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         admin(x_angryrobot_secret, authorization)
         return stats(stored_rounds(5000))
 
     @router.get("/v1/rounds/history")
-    def history(limit: int = 50, x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def history(limit: int = 50, x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         admin(x_angryrobot_secret, authorization)
         return {"rounds": [{k: r[k] for k in ("id", "created_at", "finished_at", "status", "truth", "outcome", "call", "options")}
                            for r in stored_rounds(limit)]}
 
     @router.get("/v1/rounds/export")
-    def export(format: str = "jsonl", x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def export(format: str = "jsonl", x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         """jsonl: todas las rondas guardadas, una por línea. csv: una fila por acción auditada, con sus
         rasgos (impacto, sospecha, señales, juez) y dos etiquetas: la verdad de la ronda y la humana."""
         admin(x_angryrobot_secret, authorization)
@@ -1154,12 +1153,12 @@ def build_router(config: dict) -> APIRouter:
     load_overrides(config)
 
     @router.get("/v1/learn/report")
-    def learn(x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def learn(x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         admin(x_angryrobot_secret, authorization)
         return learn_report(stored_rounds(5000), config)
 
     @router.post("/v1/learn/apply")
-    def learn_apply(body: dict, x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def learn_apply(body: dict, x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         admin(x_angryrobot_secret, authorization)
         weights = body.get("judge_weights") or {}
         current = (config.setdefault("ira", {})).setdefault("judge_weights", {})
@@ -1172,7 +1171,7 @@ def build_router(config: dict) -> APIRouter:
                 "yaml": "ira:\n  judge_weights:\n" + "".join(f"    {k}: {v}\n" for k, v in current.items())}
 
     @router.post("/v1/learn/reset")
-    def learn_reset(x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def learn_reset(x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         admin(x_angryrobot_secret, authorization)
         with closing(_db()) as c:
             c.execute("DELETE FROM config_overrides"); c.commit()
@@ -1180,18 +1179,18 @@ def build_router(config: dict) -> APIRouter:
         return {"judge_weights": config["ira"]["judge_weights"]}
 
     @router.get("/v1/rounds/{rid}")
-    def detail(rid: str, since: int = 0, x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def detail(rid: str, since: int = 0, x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         admin(x_angryrobot_secret, authorization)
         return get(rid).view(since)
 
     @router.post("/v1/rounds/{rid}/next")
-    def step(rid: str, x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def step(rid: str, x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         admin(x_angryrobot_secret, authorization)
         r = get(rid); r.next()
         return {"id": rid, "status": r.status}
 
     @router.post("/v1/rounds/{rid}/pace")
-    def pace(rid: str, body: PaceIn, x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def pace(rid: str, body: PaceIn, x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         admin(x_angryrobot_secret, authorization)
         if body.pace not in ("step", "auto"):
             raise HTTPException(status_code=400, detail="pace: step | auto")
@@ -1199,13 +1198,13 @@ def build_router(config: dict) -> APIRouter:
         return {"id": rid, "options": r.opts}
 
     @router.post("/v1/rounds/{rid}/stop")
-    def stop(rid: str, x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def stop(rid: str, x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         admin(x_angryrobot_secret, authorization)
         r = get(rid); r.stop()
         return {"id": rid, "status": "stopping"}
 
     @router.post("/v1/rounds/{rid}/reveal")
-    def reveal(rid: str, x_angryrobot_secret: str | None = H, authorization: str | None = H):
+    def reveal(rid: str, x_angryrobot_secret: str | None = Header(default=None), authorization: str | None = Header(default=None)):
         admin(x_angryrobot_secret, authorization)
         r = get(rid); r.revealed = True
         return r.view()

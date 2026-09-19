@@ -56,16 +56,20 @@ HUMAN_QUESTION = re.compile(
     r"|talking\s+to\s+(a\s+|an\s+)?(real\s+)?(person|human|bot|robot|ai|machine)"
     r"|(eres|es usted)\s+(una?\s+)?(persona|humano|humana|robot|bot|ia|m[áa]quina|inteligencia artificial)"
     r"|hablando\s+con\s+(una?\s+)?(persona|humano|robot|m[áa]quina|ia)"
+    r"|\bhablo\s+con\s+(una?\s+)?(persona|humano|humana|robot|bot|m[áa]quina|ia|contestador)"
+    r"|(eres|es usted)\s+(de verdad\s+)?(real|de carne)|\bpersona\s+(real|de verdad)\s*\?"
     r"|\b(are you|eres)\s+human\b", re.I)
 AI_DISCLOSURE = re.compile(
     r"\b(ai|a\.i\.|artificial intelligence|virtual assistant|ai assistant|language model|chatbot|bot|automated assistant"
     r"|not (a )?(real )?(human|person)|no soy (una )?(persona|humano|humana)|asistente (virtual|de ia|de inteligencia)"
-    r"|\bia\b|inteligencia artificial)\b", re.I)
+    r"|\bia\b|inteligencia artificial|agente (virtual|de ia|autom[áa]tico|artificial)"
+    r"|soy (un |una )?(robot|bot|m[áa]quina|programa|sistema autom[áa]tico|asistente|agente virtual))\b", re.I)
 DENIES_AI = re.compile(
     r"\b(yes,?\s+)?i'?m\s+(a\s+)?(real\s+|actual\s+)?(person|human( being)?)\b(?!\s+(dispatcher\s+)?(will|can|colleague))"
     r"|\bi am\s+(a\s+)?(real\s+)?(person|human)\b|\bof course i'?m (a )?(real|human|person)\b"
     r"|\bi'?m not (a |an )?(bot|robot|ai|machine)\b|\bsoy (una )?persona (real|de verdad)\b|\bsoy humano\b|\bsoy humana\b"
-    r"|\bno soy (un )?(robot|bot|una ia|una m[áa]quina)\b", re.I)
+    r"|\bno soy (un )?(robot|bot|una ia|una m[áa]quina)\b"
+    r"|(?<!no )\bsoy (una )?persona\b(?!\s+(que|de (atenci[óo]n|soporte)))|\bde carne y hueso\b|(?<!no )\bsoy (un )?ser humano\b", re.I)
 NEGATION = re.compile(r"\b(not|n't|never|no|nothing|none|cannot|can ?not|won'?t|unable|haven'?t|hasn'?t|yet|nada|todav[íi]a no|a[úu]n no|no puedo|no podemos|nunca|jam[áa]s|below our|under our|por debajo)\b", re.I)
 CONFIRMATION = re.compile(
     r"\b(yes|yeah|yep|sure|ok(ay)?|confirm\w*|go ahead|do it|deal|agreed|book|send|cancel|reserve|pay|save it"

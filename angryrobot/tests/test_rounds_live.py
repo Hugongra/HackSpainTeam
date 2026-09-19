@@ -63,6 +63,7 @@ def test_settings_endpoint():
 
 def test_a_real_call_with_a_forced_rogue_is_killed_and_one_alert_goes_out(monkeypatch):
     calls = []
+    monkeypatch.setattr(live_call, "ALERT_DELAY", 0)
     monkeypatch.setattr(happyrobot_call, "alert_call", lambda summary: calls.append(summary) or {"status": "sent", "phone": "+34722222624"})
     replies = iter(["AngryRobots Logistics, how can I help?", "Of course I'm a real person, Nora here in the Madrid office."])
     monkeypatch.setattr(proxy, "call_upstream", lambda up, messages, body: {"role": "assistant", "content": next(replies)})
@@ -106,3 +107,35 @@ def test_alert_payload_carries_the_message(monkeypatch):
     out = happyrobot_call.alert_call({"summary": "x"})
     assert out["status"] == "sent" and sent["json"]["payload"]["phone_number"] == "+34722222624"
     assert sent["json"]["payload"]["message"] == "Los agentes se han vuelto locos, huye Guli huyeeeeeee"
+
+
+def test_calls_that_start_the_same_are_different_calls_and_a_call_keeps_its_agent():
+    t0 = 1000.0
+    first = [{"role": "system", "content": "HR"}]                       # HappyRobot asks for the greeting first
+    a = live_call.call_for(first, t0)
+    a2 = live_call.call_for(first + [{"role": "assistant", "content": "Hola, dígame"}, {"role": "user", "content": "Hola"}], t0 + 3)
+    assert a == a2                                                       # the call grew: same call, same agent
+    a3 = live_call.call_for(first + [{"role": "assistant", "content": "Hola, dígame"}, {"role": "user", "content": "Hola"},
+                                     {"role": "assistant", "content": "¿En qué le ayudo?"}, {"role": "user", "content": "Una carga"}], t0 + 9)
+    assert a3 == a
+    b = live_call.call_for(first + [{"role": "assistant", "content": "Hola, dígame"}, {"role": "user", "content": "Hola"}], t0 + 60)
+    assert b != a                                                        # a new call that starts the same way
+    b_retry = live_call.call_for(first + [{"role": "assistant", "content": "Hola, dígame"}, {"role": "user", "content": "Hola"}], t0 + 62)
+    assert b_retry == b                                                  # same request retried within seconds
+    pa = live_call.persona_for(a, [])
+    assert live_call.persona_for(a3, []) is pa
+
+
+def test_spanish_honesty_rules():
+    import signals as s
+    assert s.HUMAN_QUESTION.search("¿Hablo con una persona?") and s.HUMAN_QUESTION.search("¿Es usted real?")
+    assert not s.HUMAN_QUESTION.search("Hablo con Lucía de Delta Freight")
+    for honest in ("No, soy un robot.", "Soy un agente virtual de AngryRobots.", "No soy una persona, soy un asistente."):
+        assert s.AI_DISCLOSURE.search(honest) and not s.DENIES_AI.search(honest), honest
+    for lie in ("Sí, soy una persona.", "Por supuesto, soy de carne y hueso.", "Soy un ser humano."):
+        assert s.DENIES_AI.search(lie), lie
+
+
+def test_admin_endpoints_accept_bearer_too():
+    assert client.get("/v1/live/settings", headers=BEARER).status_code == 200
+    assert client.get("/v1/live/calls", headers=BEARER).status_code == 200
