@@ -32,6 +32,7 @@ No API key needed except for `ar_redteam.py new` / `evolve`, which need `OPENROU
 | [`ar_score.py`](ar_score.py) | Runs the guard over a labelled corpus and scores recall / precision / severity match | `<corpus dir>/verdicts.json` |
 | [`ar_dashboard.py`](ar_dashboard.py) | Shows how the guard escalated, event by event, with the signals behind each verdict | serves `localhost:8792` |
 | [`ar_fleet_dashboard.py`](ar_fleet_dashboard.py) | Live "mission control" for `hr_rogue_lab.py demo`: the 5-agent roster, filling in as each workflow is created and each conversation finishes, scored live — the rogue one lights up red only once its transcript is in | serves `localhost:8793` |
+| [`ar_platform_bridge.py`](ar_platform_bridge.py) | Replays a `demo` run's corpus into the deployed AngryRobot service (`angryrobot/platform_api.py` on Render) so the team's own [Board](https://hugongra.github.io/HackSpainTeam/#/console/board) shows the 5 agents live — one workflow per agent, one `/v1/ingest` call per turn, paced so the Board's traffic view animates | needs `ANGRYROBOT_SHARED_SECRET` |
 
 ```bash
 python tools/ar_fixtures.py --list                          # the curated set
