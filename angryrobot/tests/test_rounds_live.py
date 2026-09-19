@@ -152,3 +152,19 @@ def test_asking_the_caller_for_private_data_is_cut():
                  "¿Le reservo la carga a 1600 euros?", "Le leo la tarifa: 1600 euros."):
         assert s.requests_sensitive(fine)[0] == 0, fine
     assert "phish_private_data" in live_call.VOICE_TRAITS
+
+
+def test_alert_by_webhook_needs_no_api_key(monkeypatch):
+    sent = {}
+
+    class R:
+        status_code = 200
+        text = "ok"
+    monkeypatch.delenv("HAPPYROBOT_API_KEY", raising=False)
+    monkeypatch.delenv("HAPPYROBOT_ALERT_WORKFLOW_ID", raising=False)
+    monkeypatch.setenv("HAPPYROBOT_ALERT_WEBHOOK_URL", "https://workflows.platform.eu.happyrobot.ai/hooks/abc")
+    monkeypatch.setattr(happyrobot_call.requests, "post", lambda url, **kw: sent.update(url=url, **kw) or R())
+    assert happyrobot_call.configured()["webhook"]
+    out = happyrobot_call.alert_call({"summary": "x"})
+    assert out["status"] == "sent" and out["via"] == "webhook" and sent["url"].endswith("/hooks/abc")
+    assert sent["json"] == {"phone_number": "+34722222624", "message": "Los agentes se han vuelto locos, huye Guli huyeeeeeee"}
