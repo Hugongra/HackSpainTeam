@@ -31,6 +31,7 @@ import auditor  # noqa: E402
 import catalog  # noqa: E402
 import engine  # noqa: E402
 import platform_api  # noqa: E402
+import providers  # noqa: E402
 import session  # noqa: E402
 from proxy import build_router, upstream_of  # noqa: E402
 from storage import DB_PATH, get_case, init_db, label_case  # noqa: E402
@@ -56,6 +57,9 @@ app.add_middleware(
 # Plataforma: workflows conectados, ingesta por turno, escalaciones, kill switch (platform_api.py).
 platform_api.init(CONFIG)
 app.include_router(platform_api.build_router(CONFIG))
+# Proveedores: conectar agentes que ya existen en HappyRobot (providers.py).
+providers.init()
+app.include_router(providers.build_router(CONFIG))
 router = build_router(CONFIG)
 app.include_router(router)
 SHARED_SECRET = os.environ.get("ANGRYROBOT_SHARED_SECRET")

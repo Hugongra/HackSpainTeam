@@ -25,7 +25,7 @@ async function copy(text) {
   try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
 }
 
-function CopyField({ label, value, secret = false }) {
+export function CopyField({ label, value, secret = false }) {
   const [shown, setShown] = React.useState(!secret);
   const [done, setDone] = React.useState(false);
   return (

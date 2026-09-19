@@ -9,20 +9,29 @@ import {
   addEdge, applyEdgeChanges, applyNodeChanges, getBezierPath, useNodesInitialized, useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Badge, Button, Card, Icon, Input, Select, Tabs, Verdict } from "../ds";
+import { Badge, Button, Card, Dialog, Icon, Input, Select, Tabs, Verdict } from "../ds";
 import { api } from "../api";
 import { ErrorNote, Signals, useAsync } from "./shared";
-import { Escalations, StatusBadge, WorkflowDetail } from "./Platform";
+import { CopyField, Escalations, StatusBadge, WorkflowDetail } from "./Platform";
 import { Overview, Runs, TryAction, useData } from "./Console";
 
 /* ---------------------------------------------------------------- catalog */
+// One connector per provider. Only HappyRobot has an adapter today (providers.py); the rest are announced.
+// Logos: frontend/public/providers/<id>.svg — a monogram is drawn when the file is missing.
 export const INPUTS = {
-  happyrobot: { label: "HappyRobot", icon: "plug", source: "happyrobot" },
-  openai: { label: "OpenAI-compatible", icon: "terminal", source: "openai" },
-  langchain: { label: "LangChain / LangGraph", icon: "brain", source: "langchain" },
-  n8n: { label: "n8n / Make / Zapier", icon: "zap", source: "n8n" },
-  webhook: { label: "Custom webhook", icon: "activity", source: "webhook" },
+  happyrobot: { label: "HappyRobot", source: "happyrobot", available: true },
+  openai: { label: "OpenAI", source: "openai", available: false },
+  claude: { label: "Claude", source: "claude", available: false },
+  gemini: { label: "Gemini", source: "gemini", available: false },
+  webhook: { label: "Webhook", source: "webhook", available: false, hidden: true },   // legacy workflows created by hand
 };
+const LOGO_BASE = `${import.meta.env.BASE_URL}providers/`;
+function ProviderLogo({ id, size = 22 }) {
+  const [broken, setBroken] = React.useState(false);
+  const cat = INPUTS[id] || INPUTS.webhook;
+  if (broken) return <span className="plogo plogo--mono" style={{ width: size, height: size, fontSize: size * 0.55 }}>{cat.label[0]}</span>;
+  return <img className="plogo" src={`${LOGO_BASE}${id}.svg`} alt="" width={size} height={size} onError={() => setBroken(true)} />;
+}
 // Verdict → directive is fixed on the service (after_turn): ALLOW continue · WARN continue+note · DEFER escalate · KILL kill.
 // Notify is the workflow's control_url: the service POSTs every non-continue directive and control change there.
 export const OUTPUTS = {
@@ -107,7 +116,7 @@ function InputNode({ data, selected }) {
   const cat = INPUTS[data.kind] || INPUTS.webhook;
   return (
     <Shell selected={selected}>
-      <div className="bn-head"><Icon name={cat.icon} size={16} /><span className="ar-mono muted">INPUT · {cat.label.toUpperCase()}</span></div>
+      <div className="bn-head"><ProviderLogo id={data.kind} size={18} /><span className="ar-mono muted">{cat.label.toUpperCase()}{data.external_slug ? ` · ${data.external_slug}` : ""}</span></div>
       <strong className="bn-title">{data.label || cat.label}</strong>
       {data.workflow_id && <span className="bn-sub">policy {data.profile} · {data.mode}</span>}
       <div className="bn-foot">
@@ -165,7 +174,7 @@ function TrafficEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
 const EDGE_TYPES = { traffic: TrafficEdge };
 
 /* ---------------------------------------------------------------- palette (drag source) */
-function Palette({ hasGuard }) {
+function Palette({ hasGuard, providers, onProvider }) {
   const drag = (payload) => (e) => { e.dataTransfer.setData("application/angryrobot-node", JSON.stringify(payload)); e.dataTransfer.effectAllowed = "move"; };
   const Item = ({ icon, label, payload, disabled }) => (
     <div className={`pal-item ${disabled ? "is-off" : ""}`} draggable={!disabled} onDragStart={drag(payload)} title={disabled ? "Already on the board" : "Drag onto the board"}>
@@ -173,10 +182,23 @@ function Palette({ hasGuard }) {
       <div className="pal-label">{label}</div>
     </div>
   );
+  const status = Object.fromEntries((providers || []).map((p) => [p.id, p]));
   return (
     <aside className="palette" aria-label="Connectors">
-      <span className="ar-overline muted">Inputs</span>
-      {Object.entries(INPUTS).map(([k, c]) => <Item key={k} icon={c.icon} label={c.label} payload={{ type: "connector", kind: k }} />)}
+      <span className="ar-overline muted">Providers</span>
+      {Object.entries(INPUTS).filter(([, c]) => !c.hidden).map(([k, c]) => {
+        const live = c.available && status[k]?.configured !== false;
+        return (
+          <button key={k} className={`prov-tile ${c.available ? "" : "is-soon"}`} disabled={!c.available} draggable={live} onDragStart={drag({ type: "provider", kind: k })}
+                  onClick={() => c.available && onProvider(k)} title={!c.available ? "Coming soon" : status[k]?.configured === false ? "Add HAPPYROBOT_API_KEY on the service" : "Connect existing agents"}>
+            <ProviderLogo id={k} size={26} />
+            <span className="prov-name">{c.label}</span>
+            {!c.available ? <span className="prov-tag">Soon</span>
+              : status[k]?.configured === false ? <span className="prov-tag prov-tag--warn">No key</span>
+              : status[k]?.linked ? <span className="prov-tag prov-tag--ok">{status[k].linked}</span> : null}
+          </button>
+        );
+      })}
       <span className="ar-overline muted" style={{ marginTop: 18 }}>Guard</span>
       <Item icon="brain" label="AngryRobot" payload={{ type: "guard" }} disabled={hasGuard} />
       <span className="ar-overline muted" style={{ marginTop: 18 }}>Levers</span>
@@ -329,6 +351,87 @@ function NotifyConfig({ live, connectors, refreshKey }) {
   );
 }
 
+/* ---------------------------------------------------------------- HappyRobot: pick existing agents in the org and attach the guard
+   GET /v1/providers/happyrobot/workflows lists the org (with the AngryRobot workflow each one is already linked to);
+   POST /v1/providers/happyrobot/connect registers the chosen ones, creates the Custom LLM credential in the org
+   and returns the one manual step left in the builder. "Sync" = connect everything not linked yet. */
+function HappyRobotDialog({ open, onClose, live, profiles, onConnected }) {
+  const [list, reload] = useAsync(() => (open && live ? api.hrWorkflows().then((d) => d.workflows) : Promise.resolve(null)), [open, live]);
+  const [picked, setPicked] = React.useState({});
+  const [profile, setProfile] = React.useState(profiles[0] || "default");
+  const [mode, setMode] = React.useState("enforce");
+  const [busy, setBusy] = React.useState(false); const [err, setErr] = React.useState(null); const [done, setDone] = React.useState(null);
+  React.useEffect(() => { if (open) { setPicked({}); setErr(null); setDone(null); } }, [open]);
+  const rows = list.data || [];
+  const unlinked = rows.filter((w) => !w.linked_workflow);
+  const chosen = unlinked.filter((w) => picked[w.id]);
+  const run = async (body) => {
+    setBusy(true); setErr(null);
+    try { const r = await api.hrConnect({ base_profile: profile, mode, ...body }); setDone(r); onConnected(r.results.filter((x) => x.workflow).map((x) => ({ ...x.workflow, external_slug: x.external_slug }))); reload(); }
+    catch (x) { setErr(x); } finally { setBusy(false); }
+  };
+  return (
+    <Dialog open={open} onClose={onClose} eyebrow="HAPPYROBOT" title={done ? "Connected" : "Agents in the org"} width={760}
+      footer={done ? <Button onClick={onClose}>Close</Button> : <>
+        <Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button variant="secondary" disabled={busy || !unlinked.length} onClick={() => run({ all_unlinked: true })}>{busy ? "Working…" : `Sync all (${unlinked.length})`}</Button>
+        <Button disabled={busy || !chosen.length} onClick={() => run({ workflow_ids: chosen.map((w) => w.id) })}>{busy ? "Working…" : `Connect ${chosen.length || ""}`}</Button>
+      </>}>
+      {!live && <p className="ar-small muted">Connect the service first (Settings).</p>}
+      {err && <ErrorNote error={err} />}
+      {list.error && !list.data && <ErrorNote error={list.error} onRetry={reload} />}
+      {!done && list.data && (
+        <>
+          <div className="form-2">
+            <Select label="Policy profile" value={profile} onChange={(e) => setProfile(e.target.value)} options={profiles.map((p) => ({ value: p, label: p }))} />
+            <Select label="Mode" value={mode} onChange={(e) => setMode(e.target.value)} options={[{ value: "enforce", label: "Enforce" }, { value: "observe", label: "Observe only" }]} />
+          </div>
+          <table className="table" style={{ marginTop: 8 }}>
+            <thead><tr><th style={{ width: 28 }}><input type="checkbox" checked={unlinked.length > 0 && chosen.length === unlinked.length}
+              onChange={(e) => setPicked(Object.fromEntries(unlinked.map((w) => [w.id, e.target.checked])))} aria-label="Select all" /></th>
+              <th>Agent</th><th>Version</th><th>Status</th></tr></thead>
+            <tbody>
+              {rows.map((w) => (
+                <tr key={w.id} style={{ cursor: w.linked_workflow ? "default" : "pointer" }} onClick={() => !w.linked_workflow && setPicked((p) => ({ ...p, [w.id]: !p[w.id] }))}>
+                  <td>{w.linked_workflow ? <Icon name="check" size={16} /> : <input type="checkbox" checked={!!picked[w.id]} readOnly aria-label={w.name} />}</td>
+                  <td><div style={{ fontWeight: 500, color: "var(--text-strong)" }}>{w.name}</div><div className="ar-caption muted code">{w.slug}</div></td>
+                  <td className="ar-mono">{w.version != null ? `v${w.version}` : "—"}{w.is_live ? " · live" : ""}</td>
+                  <td>{w.linked_workflow ? <Badge tone="positive" dot>{w.linked_workflow}</Badge> : <Badge>not monitored</Badge>}</td>
+                </tr>
+              ))}
+              {!rows.length && <tr><td colSpan={4} className="muted">No workflows in the org.</td></tr>}
+            </tbody>
+          </table>
+        </>
+      )}
+      {done && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {done.results.map((r) => (
+            <Card key={r.external_id} padding={18} eyebrow={r.external_name || r.external_id}>
+              {r.error && <p className="ar-small">{r.error}</p>}
+              {r.workflow && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Badge tone="positive" dot>{r.workflow.id}</Badge>
+                    {r.already && <Badge>already linked</Badge>}
+                    {r.credential?.id && <Badge tone="info">credential created</Badge>}
+                    {r.credential?.error && <Badge tone="negative">credential failed</Badge>}
+                  </div>
+                  {r.credential?.error && <p className="ar-caption">{r.credential.error}</p>}
+                  {r.credential && <CopyField label="CUSTOM LLM CREDENTIAL" value={r.credential.title} />}
+                  {r.credential && <CopyField label="ENDPOINT" value={r.credential.endpoint} />}
+                  {r.workflow.token && <CopyField label="WORKFLOW TOKEN (BEARER)" value={r.workflow.token} secret />}
+                  {r.next_steps && <ol className="ar-small" style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>{r.next_steps.map((t, i) => <li key={i}>{t}</li>)}</ol>}
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
 /* ---------------------------------------------------------------- the board */
 function BoardInner({ live, refreshKey, initial }) {
   const flow = useReactFlow();
@@ -350,6 +453,21 @@ function BoardInner({ live, refreshKey, initial }) {
   }, [flow, graphReady]);
   const [sel, setSel] = React.useState(initial || null);          // {type:'node'|'edge', id, tab?}
   const [busyAll, setBusyAll] = React.useState(false); const [allErr, setAllErr] = React.useState(null);
+  const [provider, setProvider] = React.useState(null);           // which provider dialog is open
+  const [provs] = useAsync(() => (live ? api.providers().then((d) => d.providers) : Promise.resolve([])), [live, refreshKey]);
+  // Put registered workflows on the board as connector nodes (skips the ones already there) and wire them to the guard.
+  const placeWorkflows = (list) => patch((g) => {
+    const have = new Set(g.nodes.filter((n) => n.type === "connector").map((n) => n.data.workflow_id));
+    const fresh = list.filter((w) => w && !have.has(w.id));
+    if (!fresh.length) return {};
+    const y0 = Math.max(0, ...g.nodes.filter((n) => n.type === "connector").map((n) => n.position.y + 150));
+    const nodes = fresh.map((w, i) => ({ id: `in-${w.id}`, type: "connector", position: { x: 40, y: y0 + i * 150 },
+      data: { kind: INPUTS[w.source] ? w.source : "webhook", label: w.name, profile: w.base_profile, mode: w.mode, workflow_id: w.id, status: w.status, external_slug: w.external_slug } }));
+    const edges = g.nodes.some((n) => n.id === GUARD_ID) ? nodes.map((n) => ({ id: `e-${n.id}`, source: n.id, target: GUARD_ID, type: "traffic", data: { verdicts: [] } })) : [];
+    return { nodes: [...g.nodes, ...nodes], edges: [...g.edges, ...edges] };
+  });
+  // Workflows that exist on the service but not on the board (created elsewhere, or after a sync) get placed automatically.
+  React.useEffect(() => { if (graph && wfs.data?.workflows?.length) placeWorkflows(wfs.data.workflows); }, [graph ? 1 : 0, wfs.data]); // eslint-disable-line
   const controlAll = async (action) => { setBusyAll(true); setAllErr(null); try { await api.controlAll(action); } catch (x) { setAllErr(x); } finally { setBusyAll(false); } };
 
   // First visit: seed the board from the connected workflows.
@@ -400,6 +518,7 @@ function BoardInner({ live, refreshKey, initial }) {
     e.preventDefault();
     const raw = e.dataTransfer.getData("application/angryrobot-node"); if (!raw) return;
     const p = JSON.parse(raw);
+    if (p.type === "provider") { setProvider(p.kind); return; }
     if (p.type === "guard" && graph.nodes.some((n) => n.type === "guard")) return;
     const position = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY });
     const id = p.type === "guard" ? GUARD_ID : `${p.type}-${p.kind}-${Date.now().toString(36)}`;
@@ -448,7 +567,7 @@ function BoardInner({ live, refreshKey, initial }) {
   if (!graph) return <p className="ar-small muted" style={{ padding: 24 }}>Laying out the board…</p>;
   return (
     <div className="board">
-      <Palette hasGuard={graph.nodes.some((n) => n.type === "guard")} />
+      <Palette hasGuard={graph.nodes.some((n) => n.type === "guard")} providers={provs.data} onProvider={setProvider} />
       <div className="board-main">
         <div className="board-canvas" ref={canvasRef} onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>
           <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
@@ -468,6 +587,7 @@ function BoardInner({ live, refreshKey, initial }) {
           <div className="board-legend">
             {live ? (
               <>
+                <Button size="sm" onClick={() => setProvider("happyrobot")} iconLeft={<ProviderLogo id="happyrobot" size={14} />}>Sync HappyRobot</Button>
                 <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => controlAll("pause")}>Pause all</Button>
                 <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => controlAll("resume")}>Resume all</Button>
                 <Button size="sm" variant="secondary" disabled={busyAll} onClick={() => { if (window.confirm("Kill every live run of every workflow?")) controlAll("kill"); }} iconLeft={<Icon name="octagon" size={14} />}>Kill all</Button>
@@ -483,6 +603,7 @@ function BoardInner({ live, refreshKey, initial }) {
                       onDisconnect={selEdge ? () => removeEdge(selEdge.id) : null} onOpenRun={openById} />
       </div>
 
+      <HappyRobotDialog open={provider === "happyrobot"} onClose={() => setProvider(null)} live={live} profiles={profiles} onConnected={placeWorkflows} />
       {selNode?.type === "connector" && <InputDrawer key={selNode.id} node={selNode} live={live} profiles={profiles} refreshKey={refreshKey}
         onChange={(d) => setNodeData(selNode.id, d)} onRemove={() => removeNode(selNode.id)} onClose={() => setSel(null)} />}
       {selNode?.type === "guard" && <GuardDrawer data={data} live={live} initialTab={sel.tab} onOpenRun={openById} onClose={() => setSel(null)} />}

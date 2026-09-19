@@ -50,5 +50,10 @@ export const api = {
   control: (id, action, note = "") => call(`/v1/workflows/${encodeURIComponent(id)}/control`, { method: "POST", body: { action, note } }),
   controlAll: (action, note = "") => call("/v1/workflows/control-all", { method: "POST", body: { action, note } }),
   escalations: (status) => call(`/v1/escalations${status ? `?status=${status}` : ""}`),
+  // Providers: agents that already exist on a platform (HappyRobot first)
+  providers: () => call("/v1/providers"),
+  hrWorkflows: () => call("/v1/providers/happyrobot/workflows"),
+  hrConnect: (body) => call("/v1/providers/happyrobot/connect", { method: "POST", body }),
+  providerLink: (id) => call(`/v1/providers/links/${encodeURIComponent(id)}`),
   resolve: (id, decision, note = "") => call(`/v1/escalations/${encodeURIComponent(id)}/resolve`, { method: "POST", body: { decision, note } }),
 };

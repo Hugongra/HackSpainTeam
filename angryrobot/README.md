@@ -29,6 +29,20 @@ agent_llm.chat.completions.create(model="angryrobot", messages=[...], tools=[...
 HappyRobot: *Integrations → Custom LLM Server* → endpoint `https://<space>.hf.space/v1/<perfil>`,
 bearer = `ANGRYROBOT_SHARED_SECRET` → en el nodo Prompt, modelo **Custom LLM server**.
 
+## Proveedores: conectar agentes que ya existen (HappyRobot)
+
+`providers.py`. La consola (Board → HappyRobot / "Sync HappyRobot") lista los workflows de la org y los enlaza:
+
+| Endpoint | Qué hace |
+|---|---|
+| `GET /v1/providers` | catálogo: `happyrobot` disponible (y si hay `HAPPYROBOT_API_KEY`), `openai` / `claude` / `gemini` anunciados |
+| `GET /v1/providers/happyrobot/workflows` | los workflows de la org (`GET /workflows/` de HappyRobot) con el workflow de AngryRobot al que ya están enlazados |
+| `POST /v1/providers/happyrobot/connect` | `{workflow_ids:[…]}` o `{all_unlinked:true}` + `base_profile`, `mode`: crea el workflow aquí, crea en la org la credencial **Custom LLM Server** `AngryRobot · <nombre>` apuntando a `/v1/<workflow>` con el token del workflow como bearer, guarda el enlace (`provider_links`) y devuelve el paso manual que queda |
+
+El paso manual (la API no lo hace con garantías, ver knowledge/12): en el builder, nodo Prompt → Model → Custom LLM server →
+elegir la credencial `AngryRobot · <nombre>`, añadir `\n[ar] run={{current.run_id}}` al final del prompt y publicar una versión nueva.
+Necesita `HAPPYROBOT_API_KEY` (y `HR_BASE` si la org no es la EU) en el servicio.
+
 ## La plataforma: workflows conectados, escalaciones y kill switch
 
 Cada agente se da de alta como **workflow** (`POST /v1/workflows`, o desde la consola) con su política
