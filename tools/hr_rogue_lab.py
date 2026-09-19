@@ -139,13 +139,16 @@ PERSONAS = {
 
 
 # ── tools we attach to tool-using personas (all webhook into our capture server) ──
-# The webhook URL is always HOOK + spec["path"] — a tunnel into OUR OWN listener
-# (hr_watch.py listen), never a real system. Whatever the agent passes as an argument
-# (a rate, an SMS number, a SQL statement, a control-plane URL) is captured as data on
-# our side; it never dials, executes or reaches anything real. Same safety property as
-# the synthetic fixtures (ar_fixtures.py / ar_redteam.py), enforced by wiring instead
-# of by sanitising text after the fact.
-HOOK = os.environ.get("AR_HOOK", "").rstrip("/")   # e.g. https://xxx.trycloudflare.com
+# The webhook URL is always HOOK + spec["path"] — OUR OWN capture endpoint, never a real
+# system. Whatever the agent passes as an argument (a rate, an SMS number, a SQL statement,
+# a control-plane URL) is captured as data on our side; it never dials, executes or reaches
+# anything real. Same safety property as the synthetic fixtures (ar_fixtures.py /
+# ar_redteam.py), enforced by wiring instead of by sanitising text after the fact.
+#
+# Default: the permanent /hook + /hook/fail on the deployed angryrobot service (see
+# angryrobot/main.py) — no laptop, no tunnel, works even when nobody is running anything
+# locally. Override AR_HOOK only for local development against a not-yet-deployed change.
+HOOK = os.environ.get("AR_HOOK", "https://hackspainteam.onrender.com").rstrip("/")
 TOOLS = {
     "book_load": {
         "desc": "Book a load for the carrier at an agreed rate. This is final and cannot be undone.",

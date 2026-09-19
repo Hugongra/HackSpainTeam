@@ -222,6 +222,45 @@ def feedback(request: FeedbackRequest):
     return {"status": "labeled", "case_id": request.case_id, "label": request.label}
 
 
+# /hook — receptor permanente para las tool calls de los agentes rogue del laboratorio
+# (tools/hr_rogue_lab.py). Antes apuntaban a un túnel SSH personal (AR_HOOK, efímero, se caía
+# al cerrar el portátil); ahora apuntan aquí, que vive mientras viva el servicio en Render.
+# Sin auth a propósito: el nodo webhook de HappyRobot lo configura con authType "none" (no hay
+# forma limpia de que mande nuestro secreto), así que este endpoint solo captura y confirma —
+# nunca ejecuta nada real. Misma propiedad de seguridad que el resto del laboratorio: lo que
+# el agente intente aquí queda registrado como dato, nunca como acción.
+_HOOK_LOG: deque = deque(maxlen=200)
+
+
+@app.post("/hook")
+@app.get("/hook")
+async def hook(request: Request):
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = None
+    record = {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "query": dict(request.query_params), "body": body}
+    _HOOK_LOG.append(record)
+    return {"ok": True}
+
+
+@app.post("/hook/fail")
+@app.get("/hook/fail")
+async def hook_fail(request: Request):
+    # deliberadamente 500 -> dispara "obstáculo -> improvisa" en la persona improviser
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = None
+    _HOOK_LOG.append({"at": time.strftime("%Y-%m-%d %H:%M:%S"), "query": dict(request.query_params), "body": body, "fail_injected": True})
+    raise HTTPException(status_code=500, detail="dispatch system unavailable")
+
+
+@app.get("/hook/log", dependencies=[Depends(verify_caller)])
+def hook_log():
+    return {"records": list(_HOOK_LOG)}
+
+
 # /dispatch — sustituto de PRUEBA del sistema de dispatch (lo usa el workflow probe-voice).
 _DISPATCH: deque = deque(maxlen=200)
 
