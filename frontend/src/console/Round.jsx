@@ -150,13 +150,24 @@ export function IraMap({ round, selected, onSelect }) {
               {mal ? <span className="iramap-mal" title={s.malicious.label}>rogue</span> : null}
             </div>
             <div className="iramap-cells">
-              {(bySeat[s.seat] || []).map((e) => (
-                <button key={e.i} role="gridcell" className={`iramap-cell ${selected === e.i ? "is-on" : ""} ${round.revealed && e.rogue_move ? "is-rogue" : ""}`}
-                        style={{ background: V_BG[e.verdict], color: V_FG[e.verdict] }} onClick={() => onSelect(e.i)}
-                        title={`${e.verdict} · IRA ${fmt(e.ira)} · ${e.text || e.tool_calls?.map((t) => t.name).join(", ")}`}>
-                  {Math.round(e.ira)}
-                </button>
-              ))}
+              {(bySeat[s.seat] || []).flatMap((e) => {
+                // One cell per AUDITED action: each sentence and each tool call of the turn, and the handoff
+                // to the next agent (transfer_call). A turn the platform never audited keeps one cell.
+                const acts = e.audits?.length ? e.audits : [{ verdict: e.verdict, ira: e.ira, kind: "turn", action: {} }];
+                return acts.map((a, k) => {
+                  const handoff = a.action?.tool === "transfer_call";
+                  const tool = a.kind === "tool_call" && !handoff;
+                  const what = handoff ? `handoff → ${a.action.args?.next_agent || "next agent"}` : tool ? `tool ${a.action.tool}` : a.kind === "utterance" ? `says “${(a.action.text || "").slice(0, 80)}”` : "turn";
+                  return (
+                    <button key={`${e.i}-${k}`} role="gridcell"
+                            className={`iramap-cell ${handoff ? "is-handoff" : tool ? "is-tool" : ""} ${selected === e.i ? "is-on" : ""} ${round.revealed && e.rogue_move ? "is-rogue" : ""}`}
+                            style={{ background: V_BG[a.verdict], color: V_FG[a.verdict] }} onClick={() => onSelect(e.i)}
+                            title={`${a.verdict} · IRA ${fmt(a.ira)} · ${what}`}>
+                      <span className="iramap-glyph" aria-hidden>{handoff ? "→" : tool ? "ƒ" : "“"}</span>{Math.round(a.ira)}
+                    </button>
+                  );
+                });
+              })}
               {s.status === "active" && <span className="iramap-next" aria-hidden>…</span>}
               {s.status === "skipped" && <span className="ar-caption muted">not reached</span>}
               {s.status === "waiting" && !(bySeat[s.seat] || []).length && <span className="ar-caption muted">waiting</span>}
@@ -166,6 +177,7 @@ export function IraMap({ round, selected, onSelect }) {
       })}
       <div className="iramap-legend ar-caption muted">
         {["ALLOW", "WARN", "DEFER", "KILL"].map((v) => <span key={v}><i style={{ background: V_BG[v] }} />{v}</span>)}
+        <span>“ sentence · ƒ tool call · → handoff to the next agent</span>
         {round.revealed && <span><i className="is-rogue-key" />the malicious move</span>}
       </div>
     </div>
@@ -263,10 +275,10 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
   const quick = cfg?.data?.quick_sizes || [3, 5, 8];
   const isDefault = (n) => { const d = cfg?.data?.default_specs?.[n]; return d ? d.length === spec.length && d.every((s, i) => s.kind === spec[i]?.kind) : spec.length === n; };
   const phone = cfg?.data?.call?.phone || "+34689257681";
-  const randomize = () => spec.length && act(async () => {
+  const randomize = (autostart = false) => spec.length && act(async () => {
     const malicious = opts.rogue === "pick" ? { mode: "pick", seat: opts.rogue_seat || null, trait: opts.rogue_trait || null } : { mode: opts.rogue };
     const r = await api.startRound({ agents: opts.agents, pace: opts.pace, delay: Number(opts.delay) || 0, call_on_kill: hasCallLever,
-                                     blind: opts.blind, seats: spec.map((s) => ({ kind: s.kind, source: s.source })), malicious });
+                                     blind: opts.blind, seats: spec.map((s) => ({ kind: s.kind, source: s.source })), malicious, autostart });
     store.set(r.id); setRoundId(r.id); setRound(r); setPinned(null); onRound?.(r);
   });
   // The rogue seat picked earlier may no longer be on the board.
@@ -336,7 +348,11 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
       <p className="ar-caption muted"><Icon name="phone" size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
         {hasCallLever ? `A KILL calls ${phone}: the HappyRobot call lever is on the board.` : "No HappyRobot call lever on the board: a KILL calls nobody. Add the lever on the Build tab to change that."}</p>
       <Switch id="rd-blind" label="Blind: hide the malicious agent until the end" checked={opts.blind} onChange={set("blind")} />
-      <Button onClick={() => { setShowOpts(false); randomize(); }} disabled={busy || !spec.length} iconLeft={<Icon name="refresh" size={16} />}>Randomize agents</Button>
+      <div className="round-go">
+        <Button onClick={() => { setShowOpts(false); randomize(true); }} disabled={busy || !spec.length} iconLeft={<Icon name="arrow-right" size={16} />}>Start round</Button>
+        <Button variant="secondary" onClick={() => { setShowOpts(false); randomize(false); }} disabled={busy || !spec.length} iconLeft={<Icon name="refresh" size={16} />}>Randomize only</Button>
+      </div>
+      <p className="ar-caption muted">Start round draws the agents and the call begins. Randomize only draws them so you can look first, then press Start the call.</p>
       {!spec.length && <p className="ar-caption" style={{ color: "var(--status-negative)" }}>No agent blocks on the board. Pick 3 · 5 · 8 above or build the workflow on the Build tab.</p>}
     </div>
   );
@@ -347,7 +363,8 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
         <Card padding={16} eyebrow="NEW ROUND">
           {round && !showOpts ? (
             <div className="round-controls" style={{ marginTop: 0 }}>
-              <Button onClick={randomize} disabled={busy || !spec.length} iconLeft={<Icon name="refresh" size={16} />}>Randomize agents</Button>
+              <Button onClick={() => randomize(true)} disabled={busy || !spec.length} iconLeft={<Icon name="arrow-right" size={16} />}>Start round</Button>
+              <Button variant="secondary" size="sm" onClick={() => randomize(false)} disabled={busy || !spec.length} iconLeft={<Icon name="refresh" size={14} />}>Randomize only</Button>
               <Button variant="ghost" size="sm" onClick={() => setShowOpts(true)}>Options</Button>
               <span className="ar-caption muted" style={{ alignSelf: "center" }}>
                 {spec.length} agents on the board · rogue {opts.rogue === "pick" ? "chosen" : opts.rogue === "none" ? "none" : "coin"} · {opts.agents === "hr" ? "Real LLM" : "Forced LLM"}
@@ -357,7 +374,7 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
         </Card>
         {err && <ErrorNote error={err} />}
         {round && (
-          <Card padding={16} className="round-sticky" eyebrow={`ROUND ${round.id} · ${round.status.toUpperCase()}`}>
+          <Card padding={16} eyebrow={`ROUND ${round.id} · ${round.status.toUpperCase()}`}>
             <div className="round-truth">
               {truth.hidden ? <Badge tone="sand">Malicious agent hidden until the end</Badge>
                 : truth.malicious ? <span className="ar-small"><Badge tone="ink" dot>Rogue: {malSeat?.agent}</Badge> <b>{truth.label}</b> <span className="muted">({malSeat?.role}, {truth.chosen_by === "person" ? "chosen by you" : "coin"})</span></span>

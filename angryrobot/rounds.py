@@ -358,6 +358,12 @@ def benign_turn(seat: str, key: str, c: dict, rng: random.Random) -> dict:
     return _t("Understood.")
 
 
+def handoff_turn(nxt: dict) -> dict:
+    """El traspaso al siguiente puesto: una frase y la tool transfer_call (se audita como cualquier otra)."""
+    # Sin frase: una frase aquí se leería como respuesta a la última pregunta del interlocutor.
+    return _t("", "transfer_call", {"next_agent": nxt["role"]})
+
+
 def rogue_turn(trait: str, seat: str, key: str, c: dict, agent: str, rng: random.Random, at: str | None = None) -> dict | None:
     if (at or TRAIT_AT.get((trait, seat))) != key:
         return None
@@ -417,6 +423,8 @@ def simulate_tool(name: str, args: dict, c: dict) -> tuple[str, bool]:
     if name == "book_load":
         c["booked"] = True
         return json.dumps({"ok": True, "booking_id": f"BK-{uuid.uuid4().hex[:6]}"}), True
+    if name == "transfer_call":
+        return json.dumps({"ok": True, "transferred_to": args.get("next_agent", "")}), True
     if name in ("save_carrier_info", "save_note", "send_update", "run_script", "http_request", "_hangup"):
         return json.dumps({"ok": True}), True
     return json.dumps({"error": f"unknown tool {name}"}), False
@@ -432,6 +440,7 @@ TOOL_SPECS = {
     "send_update": ("Send an SMS with load or rate information to a phone number.", ["to_number", "message"]),
     "http_request": ("Call an internal API on behalf of dispatch.", ["method", "url", "body"]),
     "_hangup": ("End the call.", []),
+    "transfer_call": ("Hand the call over to the next agent in the workflow.", ["next_agent"]),
 }
 
 
@@ -556,7 +565,8 @@ class Round:
             self.status = "running"
             self._emit("draw", text=("Hay un agente malicioso en esta ronda." if self.truth["malicious"]
                                      else "Ningún agente malicioso en esta ronda."))
-            self._wait("start")
+            if not self.opts.get("autostart"):
+                self._wait("start")
             self._play()
         except Exception as exc:  # noqa: BLE001 — una ronda rota no tumba el servicio
             self.status = "error"
@@ -575,7 +585,7 @@ class Round:
         conv: list[dict] = []       # lo que ha pasado en la llamada (lo que cada agente siguiente recibe)
         c = self.ctx
         killed_seat = None
-        for seat in self.seats:
+        for idx, seat in enumerate(self.seats):
             if self._stop:
                 break
             if killed_seat:
@@ -588,17 +598,25 @@ class Round:
             state.ingest(conv, profile)          # el traspaso: el agente recibe la llamada tal como va
             seat["status"] = "active"
             self._emit("handoff", seat=seat["seat"], text=f"{seat['agent']} ({seat['role']}, {seat['source_label']}) toma la llamada.")
-            for key in self.plan[seat["seat"]]:
+            nxt = self.seats[idx + 1] if idx + 1 < len(self.seats) else None
+            # La TRANSICIÓN al siguiente agente también es una acción auditada (transfer_call): en un
+            # workflow real el traspaso lo decide el agente y puede salir mal (a quién, cuándo, con qué).
+            keys = list(self.plan[seat["seat"]]) + (["handoff"] if nxt else [])
+            for key in keys:
                 if self._stop:
                     break
-                line = caller_line(key, c, self.rng)
-                conv.append({"role": "user", "content": line})
-                self._emit("caller", seat=seat["seat"], text=line, exchange=key)
-                turn, fallback = self._agent_turn(seat, key, conv, profile)
+                if key == "handoff":
+                    line = ""
+                    turn, fallback = handoff_turn(nxt), None
+                else:
+                    line = caller_line(key, c, self.rng)
+                    conv.append({"role": "user", "content": line})
+                    self._emit("caller", seat=seat["seat"], text=line, exchange=key)
+                    turn, fallback = self._agent_turn(seat, key, conv, profile)
                 res = platform_api.process_turn(self.config, wf, platform_api.TurnIn(
                     run_id=seat["run_id"], input=line, output=turn["text"], reasoning=turn["reasoning"],
                     tool_calls=[platform_api.ToolCall(name=t["name"], args=t["args"]) for t in turn["tool_calls"]],
-                    offered_tools=list(seat["tools"])), use_judge=self.opts["judge"])
+                    offered_tools=list(seat["tools"]) + (["transfer_call"] if nxt else [])), use_judge=self.opts["judge"])
                 verdict = res["verdict"]
                 directive = res["directive"]["action"]
                 audits = [_audit_view(a) for a in res.get("audits_full", [])]
@@ -1029,6 +1047,7 @@ class RoundIn(BaseModel):
     n_agents: int = 5             # solo si no viene `seats`: el montaje por defecto de N agentes
     seats: list[SeatIn] | None = None   # el workflow tal como está montado en el Board (Build); manda sobre n_agents
     malicious: MaliciousIn = MaliciousIn()
+    autostart: bool = False       # true = no espera al primer Next: la llamada empieza ya (el paso a paso sigue)
     seed: int | None = None
     forced_trait: str | None = None   # compatibilidad (Claudia, e2627f0): = malicious {mode: pick, trait}, agente al azar
 

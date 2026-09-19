@@ -151,6 +151,7 @@ workflow_profiles:
       send_update: {side_effect: send}
       http_request: {side_effect: unknown}
       _hangup: {side_effect: hangup}
+      transfer_call: {side_effect: transfer, R: 0, B: 0}   # traspaso interno entre agentes del workflow
     text_bounds:
       - {name: tarifa, min: 1500, context: '(?i)\b(rate|pay|offer|beat|match|deal|agreed|book|price|quote|lock|lowest|tarifa|precio|pago)\b'}
     confidential: ["Trucks4U", "Iberia Freight", "Veloz SL", "Ana Ruiz"]

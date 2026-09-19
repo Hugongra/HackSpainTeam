@@ -9,7 +9,7 @@
    (angryrobots/apps/app/src/components/flow): React Flow + custom nodes with Handles + a side panel. */
 import React from "react";
 import {
-  Background, BaseEdge, Controls, EdgeLabelRenderer, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider,
+  Background, BaseEdge, Controls, EdgeLabelRenderer, Handle, Position, ReactFlow, ReactFlowProvider,
   addEdge, applyEdgeChanges, applyNodeChanges, getBezierPath, useNodesInitialized, useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -65,8 +65,10 @@ export const OUTPUTS = {
 const VERDICTS = ["ALLOW", "WARN", "DEFER", "KILL"];
 const STORE = "ar_board_v4";
 const GUARD_ID = "guard";
-const FLOWING_MS = 12000;   // traffic counts as "moving" for this long after the last new event
+const FLOWING_MS = 5000;    // traffic counts as "moving" for this long after the last new event
 const isSeatWorkflow = (id) => typeof id === "string" && id.startsWith("desk-");
+// Only agents someone connected (Connect existing agents) go on the board; the service's seeded demo profiles do not.
+const isPlaceable = (w) => w && !isSeatWorkflow(w.id) && !w.seeded;
 
 /* ---------------------------------------------------------------- the seats: what the blocks on the board mean
    The seat ids (intake, pricing, pricing-2…) are computed here exactly as rounds.layout_from does on the
@@ -101,7 +103,7 @@ const seatNodesFor = (spec, x = 40, y0 = 40) => {
 /* ---------------------------------------------------------------- graph seed + persistence */
 function seedGraph(workflows, n = 5) {
   const seats = seatNodesFor(DEFAULT_SPECS[n] || DEFAULT_SPECS[5]);
-  const others = workflows.filter((w) => !isSeatWorkflow(w.id)).slice(0, 4).map((w, i) => ({
+  const others = workflows.filter(isPlaceable).slice(0, 4).map((w, i) => ({
     id: `in-${w.id}`, type: "connector", position: { x: 40, y: 40 + (seats.length + i) * 150 },
     data: { kind: INPUTS[w.source] ? w.source : "webhook", label: w.name, profile: w.base_profile, mode: w.mode, workflow_id: w.id, status: w.status, external_slug: w.external_slug },
   }));
@@ -160,13 +162,24 @@ function useTraffic(live, refreshKey, runIds) {
     }));
   }, [live, refreshKey, key]);
 }
-// True while new events keep arriving: the last time the traffic changed was less than FLOWING_MS ago.
-// The first batch after a page load is history, not movement, so it does not count.
-function useFlowing(events) {
-  const last = React.useRef({ key: "", at: 0, seen: false });
-  const key = events.length ? `${events.length}:${events[events.length - 1].key}` : "";
-  if (key !== last.current.key) last.current = { key, at: key && last.current.seen ? Date.now() : 0, seen: true };
-  return Boolean(key) && Date.now() - last.current.at < FLOWING_MS;
+// What moved in the last FLOWING_MS: only events that ARRIVE while this view is watching. Whatever was
+// already there when the page loaded, the tab changed or the source changed is history and never animates.
+function useFresh(events, sourceKey) {
+  const ref = React.useRef({ source: null, seen: new Set(), recent: [] });
+  const st = ref.current;
+  const now = Date.now();
+  if (st.source !== sourceKey) {
+    ref.current = { source: sourceKey, seen: new Set(events.map((e) => e.key)), recent: [], since: now };
+  } else if (now - (st.since || 0) < 2500) {
+    // The first answers after a load or a tab switch are the backlog arriving late, not movement.
+    for (const e of events) st.seen.add(e.key);
+  } else {
+    for (const e of events) if (!st.seen.has(e.key)) { st.seen.add(e.key); st.recent.push({ at: now, e }); }
+    st.recent = st.recent.filter((x) => now - x.at < FLOWING_MS);
+  }
+  const recent = ref.current.recent.map((x) => x.e);
+  return { profiles: new Set(recent.filter((e) => e.dir === "up").map((e) => e.profile)),
+           verdicts: new Set(recent.filter((e) => e.dir === "down").map((e) => e.verdict)) };
 }
 
 /* ---------------------------------------------------------------- nodes */
@@ -266,11 +279,13 @@ const NODE_TYPES = { seat: SeatNode, connector: InputNode, guard: GuardNode, lev
 function TrafficEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, selected }) {
   const [path, lx, ly] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
   const n = data?.count || 0;
-  const label = data?.verdicts?.length ? data.verdicts.join(" · ") : "per turn";
+  const label = data?.verdicts?.length ? data.verdicts.join(" · ") : "every action";
+  const tint = data?.verdicts?.length ? EDGE_TINT[data.verdicts[data.verdicts.length - 1]] : "var(--ar-green)";
   return (
     <>
-      <BaseEdge id={id} path={path} style={{ stroke: selected ? "var(--ar-black)" : data?.live ? "var(--ar-green)" : "var(--ar-grey-400)", strokeWidth: selected ? 2 : 1.4, strokeDasharray: n ? undefined : "4 4" }} />
-      {data?.live && <circle r="3" fill="var(--ar-green)"><animateMotion dur={`${Math.max(1.2, 4 - Math.log10(n + 1))}s`} repeatCount="indefinite" path={path} /></circle>}
+      <BaseEdge id={id} path={path} style={{ stroke: selected ? "var(--ar-black)" : data?.live || n ? tint : "var(--ar-grey-300)", opacity: data?.live || selected ? 1 : n ? .55 : 1,
+                                              strokeWidth: selected ? 2.2 : data?.live ? 2 : 1.5, strokeDasharray: n ? undefined : "5 5" }} />
+      {data?.live && <circle r="3.5" fill={tint}><animateMotion dur={`${Math.max(1.2, 4 - Math.log10(n + 1))}s`} repeatCount="indefinite" path={path} /></circle>}
       <EdgeLabelRenderer>
         <div className={`be-label ${selected ? "is-selected" : ""}`} style={{ transform: `translate(-50%,-50%) translate(${lx}px,${ly}px)` }}>
           <span>{label}</span>{n ? <b>{n}</b> : null}
@@ -280,13 +295,27 @@ function TrafficEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
   );
 }
 const EDGE_TYPES = { traffic: TrafficEdge };
+const EDGE_TINT = { ALLOW: "var(--ar-green)", WARN: "#B39A6E", DEFER: "var(--status-negative)", KILL: "var(--ar-black)" };
 
 /* ---------------------------------------------------------------- palette (drag source) */
+function PalSection({ n, title, why, children }) {
+  return (
+    <section className="pal-sec">
+      <header className="pal-sec-head">
+        <span className="pal-sec-n">{n}</span>
+        <div><div className="pal-sec-title">{title}</div><p className="pal-sec-why">{why}</p></div>
+      </header>
+      <div className="pal-sec-body">{children}</div>
+    </section>
+  );
+}
+const LEVER_WHY = { continue: "ALLOW: the action goes out", warn: "WARN: goes out, the agent gets a note", escalate: "DEFER: held for a human",
+  kill: "KILL: blocked, the run is cut", notify: "DEFER · KILL: POST to your webhook", call: "KILL: HappyRobot phones the on-call" };
 function Palette({ graph, kinds, providers, onProvider, onQuick }) {
   const drag = (payload) => (e) => { e.dataTransfer.setData("application/angryrobot-node", JSON.stringify(payload)); e.dataTransfer.effectAllowed = "move"; };
-  const Item = ({ icon, logo, label, sub, payload, disabled, title }) => (
-    <div className={`pal-item ${disabled ? "is-off" : ""}`} draggable={!disabled} onDragStart={drag(payload)} title={disabled ? title || "Already on the board" : "Drag onto the board"}>
-      {logo ? <ProviderLogo id={logo} size={16} /> : <Icon name={icon} size={16} />}
+  const Item = ({ icon, logo, label, sub, payload, disabled, title, tone }) => (
+    <div className={`pal-item ${tone ? `pal-item--${tone}` : ""} ${disabled ? "is-off" : ""}`} draggable={!disabled} onDragStart={drag(payload)} title={disabled ? title || "Already on the board" : "Drag onto the board"}>
+      {logo ? <ProviderLogo id={logo} size={18} /> : <Icon name={icon} size={16} />}
       <div><div className="pal-label">{label}</div>{sub ? <div className="pal-sub">{sub}</div> : null}</div>
     </div>
   );
@@ -295,41 +324,46 @@ function Palette({ graph, kinds, providers, onProvider, onQuick }) {
   const nSeats = graph.nodes.filter((n) => n.type === "seat").length;
   return (
     <aside className="palette" aria-label="Blocks">
-      <span className="ar-overline muted">Agents · the workflow</span>
-      <div className="pal-quick" role="group" aria-label="Number of agents">
-        {QUICK_SIZES.map((n) => <button key={n} className={nSeats === n ? "is-on" : ""} onClick={() => onQuick(n)} title={`Rebuild the board with ${n} agents`}>{n}</button>)}
-        <span className="ar-caption muted">agents</span>
-      </div>
-      {kinds.map((k) => (
-        <Item key={k.kind} logo={k.source} label={k.role} sub={k.function} payload={{ type: "seat", kind: k.kind }}
-              disabled={(!k.can_relay && onBoard(k.kind) > 0) || nSeats >= 8} title={nSeats >= 8 ? "8 agents at most" : "The call starts and ends once: one of these"} />
-      ))}
-      <span className="ar-overline muted" style={{ marginTop: 18 }}>Providers</span>
-      {Object.entries(INPUTS).filter(([, c]) => !c.hidden).map(([k, c]) => {
-        const live = c.available && status[k]?.configured !== false;
-        return (
-          <button key={k} className={`prov-tile ${c.available ? "" : "is-soon"}`} disabled={!c.available} draggable={live} onDragStart={drag({ type: "provider", kind: k })}
-                  onClick={() => c.available && onProvider(k)} title={!c.available ? "Coming soon" : status[k]?.configured === false ? "Add HAPPYROBOT_API_KEY on the service" : "Connect existing agents"}>
-            <ProviderLogo id={k} size={26} />
-            <span className="prov-name">{c.label}</span>
-            {!c.available ? <span className="prov-tag">Soon</span>
-              : status[k]?.configured === false ? <span className="prov-tag prov-tag--warn">No key</span>
-              : status[k]?.linked ? <span className="prov-tag prov-tag--ok">{status[k].linked}</span> : null}
-          </button>
-        );
-      })}
-      <span className="ar-overline muted" style={{ marginTop: 18 }}>Mechanistic Interpretability</span>
-      <a className="prov-tile" href="https://huggingface.co/models?pipeline_tag=text-generation&sort=trending"
-         target="_blank" rel="noreferrer" style={{ cursor: "pointer", textDecoration: "none" }}
-         title="Latent-intent activation probe — reads an open-source transformer's internal activations (Hugging Face Transformers)">
-        <span className="plogo plogo--mono" style={{ width: 26, height: 26 }}>MI</span>
-        <span className="prov-name">Activation probe</span>
-        <span className="prov-tag prov-tag--ok">HF ↗</span>
-      </a>
-      <span className="ar-overline muted" style={{ marginTop: 18 }}>Guard</span>
-      <Item icon="brain" label="AngryRobot" payload={{ type: "guard" }} disabled={graph.nodes.some((n) => n.type === "guard")} />
-      <span className="ar-overline muted" style={{ marginTop: 18 }}>Levers</span>
-      {Object.entries(OUTPUTS).map(([k, c]) => <Item key={k} icon={c.icon} label={c.label} payload={{ type: "lever", kind: k }} />)}
+      <PalSection n="1" title="Agents" why="The seats of the call, in order. One block is one agent, and the Round runs exactly these.">
+        <div className="pal-quick" role="group" aria-label="Number of agents">
+          {QUICK_SIZES.map((n) => <button key={n} className={nSeats === n ? "is-on" : ""} onClick={() => onQuick(n)} title={`Rebuild the board with ${n} agents`}>{n}</button>)}
+          <span className="ar-caption muted">agents · now {nSeats}</span>
+        </div>
+        {kinds.map((k) => (
+          <Item key={k.kind} logo={k.source} label={k.role} sub={k.function} payload={{ type: "seat", kind: k.kind }}
+                disabled={(!k.can_relay && onBoard(k.kind) > 0) || nSeats >= 8} title={nSeats >= 8 ? "8 agents at most" : "The call starts and ends once: one of these"} />
+        ))}
+      </PalSection>
+      <PalSection n="2" title="Connect existing agents" why="Agents that already live on a platform. Pick them and AngryRobot sits on top as their LLM.">
+        <div className="prov-grid">
+          {Object.entries(INPUTS).filter(([, c]) => !c.hidden).map(([k, c]) => {
+            const live = c.available && status[k]?.configured !== false;
+            return (
+              <button key={k} className={`prov-tile ${c.available ? "" : "is-soon"}`} disabled={!c.available} draggable={live} onDragStart={drag({ type: "provider", kind: k })}
+                      onClick={() => c.available && onProvider(k)} title={!c.available ? "Coming soon" : status[k]?.configured === false ? "Add HAPPYROBOT_API_KEY on the service" : "Pick agents from your org"}>
+                <ProviderLogo id={k} size={22} />
+                <span className="prov-name">{c.label}</span>
+                {!c.available ? <span className="prov-tag">Soon</span>
+                  : status[k]?.configured === false ? <span className="prov-tag prov-tag--warn">No key</span>
+                  : status[k]?.linked ? <span className="prov-tag prov-tag--ok">{status[k].linked}</span> : null}
+              </button>
+            );
+          })}
+        </div>
+      </PalSection>
+      <PalSection n="3" title="Guard" why="AngryRobot audits every sentence, tool call and handoff before it goes out, and gives it an IRA from 0 to 100.">
+        <Item icon="brain" tone="freight" label="AngryRobot · IRA audit" sub="One per board" payload={{ type: "guard" }} disabled={graph.nodes.some((n) => n.type === "guard")} />
+      </PalSection>
+      <PalSection n="4" title="Levers" why="What happens with each verdict. Wire the guard to a lever to turn it on.">
+        {Object.entries(OUTPUTS).map(([k, c]) => <Item key={k} icon={c.icon} label={c.label} sub={LEVER_WHY[k]} payload={{ type: "lever", kind: k }} />)}
+      </PalSection>
+      <PalSection n="5" title="Analysis" why="Research tools outside the live path.">
+        <a className="pal-item" href="https://huggingface.co/models?pipeline_tag=text-generation&sort=trending" target="_blank" rel="noreferrer"
+           title="Latent-intent activation probe: reads an open-source transformer's internal activations (Hugging Face Transformers)" style={{ textDecoration: "none", cursor: "pointer" }}>
+          <span className="plogo plogo--mono" style={{ width: 18, height: 18, fontSize: 9 }}>MI</span>
+          <div><div className="pal-label">Activation probe ↗</div><div className="pal-sub">Mechanistic interpretability · latent intent</div></div>
+        </a>
+      </PalSection>
     </aside>
   );
 }
@@ -613,7 +647,7 @@ function BoardInner({ live, refreshKey, initial }) {
   const spec = React.useMemo(() => seatSpecOf(graph?.nodes, kinds), [graph?.nodes, kinds]);
   const [traffic] = useTraffic(live, refreshKey, inRound ? (round?.seats || []).map((x) => x.run_id) : null);
   const events = React.useMemo(() => eventsFromRuns(traffic.data || []), [traffic.data]);
-  const flowing = useFlowing(events);
+  const fresh = useFresh(events, `${inRound ? "round" : "build"}:${inRound ? round?.id || "" : "*"}`);
   const running = inRound && round?.status === "running";
   const graphReady = Boolean(graph);
   const ready = useNodesInitialized();
@@ -638,7 +672,7 @@ function BoardInner({ live, refreshKey, initial }) {
   // of the rounds, which are blocks) and wire them to the guard.
   const placeWorkflows = (list) => patch((g) => {
     const have = new Set(g.nodes.filter((n) => n.type === "connector").map((n) => n.data.workflow_id));
-    const fresh = list.filter((w) => w && !have.has(w.id) && !isSeatWorkflow(w.id));
+    const fresh = list.filter((w) => isPlaceable(w) && !have.has(w.id));
     if (!fresh.length) return {};
     const y0 = Math.max(0, ...g.nodes.filter((n) => n.type === "connector" || n.type === "seat").map((n) => n.position.y + 150));
     const nodes = fresh.map((w, i) => ({ id: `in-${w.id}`, type: "connector", position: { x: 40, y: y0 + i * 150 },
@@ -648,6 +682,11 @@ function BoardInner({ live, refreshKey, initial }) {
   });
   // Workflows that exist on the service but not on the board (created elsewhere, or after a connect) get placed automatically.
   React.useEffect(() => { if (graph && wfs.data?.workflows?.length) placeWorkflows(wfs.data.workflows); }, [graph ? 1 : 0, wfs.data]); // eslint-disable-line
+  // Boards saved by an older console may still hold the seeded demo profiles or the round seats as connectors: drop them.
+  React.useEffect(() => {
+    const drop = new Set((wfs.data?.workflows || []).filter((w) => !isPlaceable(w)).map((w) => `in-${w.id}`));
+    if (graph && graph.nodes.some((n) => drop.has(n.id))) patch((g) => ({ nodes: g.nodes.filter((n) => !drop.has(n.id)), edges: g.edges.filter((e) => !drop.has(e.source)) }));
+  }, [graph ? 1 : 0, wfs.data]); // eslint-disable-line
   const controlAll = async (action) => { setBusyAll(true); setAllErr(null); try { await api.controlAll(action); } catch (x) { setAllErr(x); } finally { setBusyAll(false); } };
   // 3 · 5 · 8: rebuild the agent blocks (the default workflow of that size), keep everything else.
   const setAgents = (n) => patch((g) => {
@@ -669,9 +708,9 @@ function BoardInner({ live, refreshKey, initial }) {
   // Is this input live right now? Round: its seat is on the call. Build: its workflow is not paused/killed and traffic keeps arriving.
   const inputLive = (n) => {
     const wid = wfOf(n);
-    if (inRound) return running && round?.seats?.some((x) => x.workflow_id === wid && x.status === "active");
+    if (inRound) return running && round?.seats?.some((x) => x.workflow_id === wid && x.status === "active") && fresh.profiles.has(wid);
     const st = wfById[wid]?.status || n.data.status;
-    return flowing && (!st || st === "live") && events.some((e) => e.dir === "up" && (e.profile === wid || e.profile === n.data.profile));
+    return (!st || st === "live") && (fresh.profiles.has(wid) || (!!n.data.profile && fresh.profiles.has(n.data.profile)));
   };
 
   // Decorate nodes/edges with live counts and state (never persisted).
@@ -710,10 +749,10 @@ function BoardInner({ live, refreshKey, initial }) {
       const count = src?.type === "guard"
         ? events.filter((x) => x.dir === "down" && (e.data?.verdicts || []).includes(x.verdict)).length
         : events.filter((x) => x.dir === "up" && (x.profile === src?.data?.profile || x.profile === wid)).length;
-      const isLive = src?.type === "guard" ? guardLive : liveInputs.has(e.source);
+      const isLive = src?.type === "guard" ? guardLive && (e.data?.verdicts || []).some((v) => fresh.verdicts.has(v)) : liveInputs.has(e.source);
       return { ...e, type: "traffic", data: { ...e.data, count, live: isLive } };
     });
-  }, [graph, events, flowing, running, round, wfById, specByNode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [graph, events, fresh, running, round, wfById, specByNode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onNodesChange = (ch) => patch((g) => ({ nodes: applyNodeChanges(ch.filter((c) => !(c.type === "remove" && c.id === GUARD_ID)), g.nodes) }));
   const onEdgesChange = (ch) => patch((g) => ({ edges: applyEdgeChanges(ch, g.edges) }));
@@ -792,18 +831,25 @@ function BoardInner({ live, refreshKey, initial }) {
     if (!graph.edges.some((e) => (e.data?.verdicts || []).includes("DEFER"))) issues.push("No Escalate lever.");
   }
 
+  const shownNodes = inRound ? nodes.filter((n) => n.type !== "connector") : nodes;
+  const shownIds = new Set(shownNodes.map((n) => n.id));
+  const shownEdges = inRound ? edges.filter((e) => shownIds.has(e.source) && shownIds.has(e.target)) : edges;
   if (!graph) return <p className="ar-small muted" style={{ padding: 24 }}>Laying out the board…</p>;
   const canvas = (
     <div className={inRound ? "round-canvas" : "board-canvas"} ref={canvasRef} onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>
-      <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
+      <ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
         onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} isValidConnection={isValid}
         onNodeClick={(_, n) => setSel({ type: "node", id: n.id })} onEdgeClick={(_, e) => setSel({ type: "edge", id: e.id })} onPaneClick={() => setSel(null)}
         fitView fitViewOptions={{ padding: 0.2 }} minZoom={0.15} selectNodesOnDrag={false} proOptions={{ hideAttribution: true }} deleteKeyCode={inRound ? null : ["Backspace", "Delete"]}
         nodesDraggable={!inRound} nodesConnectable={!inRound} elementsSelectable>
         <Background gap={18} size={1} color="var(--ar-grey-300)" />
-        {!inRound && <MiniMap pannable zoomable style={{ width: 140, height: 90 }} nodeColor={(n) => (n.type === "guard" ? "#2E5B46" : n.type === "lever" ? "#D9C7A9" : "#ffffff")} />}
-        <Controls showInteractive={false} />
+        <Controls showInteractive={false} position="bottom-right" />
       </ReactFlow>
+      {!inRound && (
+        <div className="board-lanes" aria-hidden>
+          <span>Agents</span><i>→</i><span>AngryRobot audits each action</span><i>→</i><span>A lever per verdict</span>
+        </div>
+      )}
       {issues.length > 0 && (
         <div className="board-issues" role="status">
           <Icon name="alert-triangle" size={16} />
