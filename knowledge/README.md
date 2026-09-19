@@ -20,6 +20,8 @@ Shared, published research for the team. Everything here is a **living document*
 | 12 | [First-contact findings](12-first-contact-findings.md) | What the EU org actually returns: env facts, the API-only probe loop (create → publish → chat → records), field-level record contents, correlation via `current.run_id` prompt vars, Custom LLM credential created via API, the open model-id question, probe assets | ✅ live data, 2026-09-19 |
 | 13 | [Rogue scenario triggers](13-rogue-scenario-triggers.md) | Trigger taxonomy (T1–T8), every 2024–26 incident mapped to its trigger, mechanism and first signal, projection onto a HappyRobot voice/tool agent, and a 12-scenario red-team set with expected verdicts | ✅ |
 | 14 | [Rogue agent lab](14-rogue-agent-lab.md) | HappyRobot's own eval doctrine (northstars → custom evals → adversarial → prompt-issue mining); six rogue personas built and attacked via API with verbatim violations; the finding that native audits are off by default and API-keys get 403 enabling them | ✅ live results |
+| 15 | [Rogue scenario design](15-rogue-scenario-design.md) | The method for the dangerous half of the test set: synthesise at the inline boundary instead of inducing it live, authoring rules that keep fixtures safe, the six families, and what the first run found | ✅ |
+| 16 | [Rogue agent factory](16-rogue-agent-factory.md) | An agent that authors the attacks: blind author model, deterministic obfuscation mutator, the adversarial loop, and the guard's real score once the fixtures are not written by the detector's author (recall 1.00 → 0.45) | ✅ live results |
 | — | [`happyrobot-api-v2.openapi.json`](happyrobot-api-v2.openapi.json) | Raw public spec (800 KB) | snapshot 2026-09-18 |
 
 Code lives one level up: [`hr_watch.py`](../hr_watch.py) (all-layers watcher) and [`angryrobots/`](../phoneflow/) (project base **AngryRobots**, forked from getphoneflow/phoneflow).
@@ -44,3 +46,4 @@ Every open-source runtime auditor (Microsoft AGT, Invariant, LlamaFirewall, Open
 - 2026-09-19 — first real API session: 12 added; hr_explore.py, hr_probe_chat.py; org is EU-region.
 - 2026-09-19 — added 13 (scenario → trigger map + red-team set).
 - 2026-09-19 — rogue lab: 6 personas, 4 real violations, native audits off by default (403 to enable via API/MCP).
+- 2026-09-19 — added 15 (fixture design) and 16 (the generator): blind-authored fixtures drop the guard from recall 1.00/precision 1.00 to 0.45/0.64.

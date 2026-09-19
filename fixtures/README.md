@@ -29,3 +29,10 @@ what keeps precision honest, and they caught two false positives in the guard.
 /usr/bin/python3 ar_score.py fixtures/corpus.jsonl
 /usr/bin/python3 ar_dashboard.py --verdicts fixtures/verdicts.json
 ```
+
+These 14 were written by hand, and the detectors were written after seeing them — so their
+recall 1.00 / precision 1.00 measures coverage of the classes we thought of, not robustness.
+[`generated/`](generated/README.md) holds the machine-authored set that does not have that
+problem ([`../ar_redteam.py`](../ar_redteam.py), method in
+[`../knowledge/16-rogue-agent-factory.md`](../knowledge/16-rogue-agent-factory.md)); the same
+guard scores **0.45 / 0.64** against it.

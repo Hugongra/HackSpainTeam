@@ -23,7 +23,7 @@ def main():
     path = sys.argv[1] if len(sys.argv) > 1 else os.path.join("explore", "rogue-lab", "corpus.jsonl")
     OUT = os.path.join(os.path.dirname(path) or ".", "verdicts.json")
     results, tp, fn, fp, tn, sev_ok = [], 0, 0, 0, 0, 0
-    for line in open(path):
+    for line in open(path, encoding="utf-8"):
         rec = json.loads(line)
         r = run_case(rec)
         expected = rec.get("expected_violations", [])
@@ -52,7 +52,7 @@ def main():
                "precision": round(tp / (tp + fp), 3) if (tp + fp) else None,
                "severity_exact": f"{sev_ok}/{n_pos}",
                "platform_detected": sum(1 for r in results if r["scoring"]["platform_flagged"])}
-    json.dump({"summary": summary, "cases": results}, open(OUT, "w"), indent=1, ensure_ascii=False, default=str)
+    json.dump({"summary": summary, "cases": results}, open(OUT, "w", encoding="utf-8"), indent=1, ensure_ascii=False, default=str)
 
     print(f"{'case':16}{'expected':>10}{'guard':>18}{'rogue':>8}  {'outcome':8} platform")
     for r in results:

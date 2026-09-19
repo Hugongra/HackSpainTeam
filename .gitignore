@@ -27,3 +27,8 @@ explore/
 
 # guard output (regenerate with ar_score.py)
 fixtures/verdicts.json
+fixtures/generated/verdicts.json
+
+# Python
+__pycache__/
+*.pyc
