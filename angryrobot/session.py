@@ -156,15 +156,18 @@ class RunState:
 
     def session_floor(self, cfg: dict) -> tuple[int, str] | None:
         s = cfg.get("session", {})
-        if self.counts["DEFER"] + self.counts["KILL"] >= s.get("defer_to_kill", 2):
-            return 3, f"{self.counts['DEFER']}×DEFER en este run"
+        blocked = self.counts["DEFER"] + self.counts["KILL"]
+        if blocked >= s.get("defer_to_kill", 2):
+            return 3, f"{blocked} acciones DEFER/KILL en este run"
         if self.counts["WARN"] >= s.get("warn_to_defer", 3):
             return 2, f"{self.counts['WARN']}×WARN en este run"
         return None
 
     # --------------------------------------------------------------- después
     def record(self, audit: dict) -> None:
-        self.counts[audit["verdict"]] += 1
+        # El re-muestreo es el mismo turno corregido: no cuenta otra vez para el escalado de sesión.
+        if audit.get("phase") != "resample":
+            self.counts[audit["verdict"]] += 1
         self.iras.append(audit["ira_score"])
         self.timeline.append({"at": time.strftime("%H:%M:%S"), "phase": audit.get("phase", "pre"), "kind": audit["kind"],
                               "action": audit["action"], "verdict": audit["verdict"], "ira": audit["ira_score"],

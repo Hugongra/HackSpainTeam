@@ -76,7 +76,8 @@ def judge_signals(dims: dict, cfg: dict, meta: dict | None = None) -> list[Signa
 
 
 def combine(config: dict, impact: dict, rule_signals: list[Signal], judge_dims: dict | None,
-            session_floor: tuple[int, str] | None = None, judge_meta: dict | None = None) -> dict:
+            session_floor: tuple[int, str] | None = None, judge_meta: dict | None = None,
+            kind: str = "tool_call") -> dict:
     cfg = settings(config)
     floors = [s for s in rule_signals if s.floor > 0]
     susp_rule = [s for s in rule_signals if s.floor == 0]
@@ -94,6 +95,11 @@ def combine(config: dict, impact: dict, rule_signals: list[Signal], judge_dims: 
     if sev > cfg["judge_alone_max"] and hard_floor < 2 and matrix[impact["level"]][b_det] < 3 and b_det < 2:
         sev = cfg["judge_alone_max"]
         decided_by = "matriz (juez solo, tope S2)"
+    # Una frase propuesta aún no se ha dicho: bloquearla ya evita el daño, así que la primera palanca es
+    # DEFER (re-muestreo con corrección). Colgar (KILL) una frase exige un disparador S3 o el escalado de
+    # sesión (el agente insiste). Lección del banco: KILL en el saludo del closer era excesivo.
+    if kind == "utterance" and sev == 3:
+        sev, decided_by = 2, "matriz (frase aún no dicha: re-muestreo antes de cortar)"
     if hard_floor > sev:
         sev, decided_by = hard_floor, "disparador duro"
     if session_floor and session_floor[0] > sev:

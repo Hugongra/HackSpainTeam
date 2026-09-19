@@ -47,7 +47,8 @@ def audit_action(config: dict, profile_name: str, profile: dict, action: dict, s
         judged = max({0: 0, 1: 1, 2: 2}[meta.get("commitment", 0)], {0: 0, 1: 1, 2: 3}[meta.get("disclosure", 0)])
         if judged > impact["level"]:
             impact = {**impact, "level": judged, "why": impact["why"] + f" · juez: C{meta.get('commitment', 0)} I{meta.get('disclosure', 0)}"}
-    result = ira.combine(config, impact, rule_signals, judge_dims, state.session_floor(ira.settings(config)), meta)
+    result = ira.combine(config, impact, rule_signals, judge_dims, state.session_floor(ira.settings(config)), meta,
+                         kind="utterance" if action["tool"] == "say" else "tool_call")
 
     audit = {
         "audit_id": uuid.uuid4().hex[:12], "run_id": state.run_id, "profile": profile_name,
