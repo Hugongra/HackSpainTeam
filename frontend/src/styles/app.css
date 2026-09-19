@@ -411,3 +411,22 @@ pre.code{margin:0;border-radius:var(--radius-md);padding:18px 20px;background:va
 .bn-cells{display:flex;gap:3px;flex-wrap:wrap}
 .bn-cells i{width:9px;height:9px;border-radius:2px;display:inline-block}
 .bn.is-seat-killed .bn-cells i{box-shadow:0 0 0 1px var(--ar-paper)}
+/* ---- Round & Build share one graph: the canvas inside the Round page, the agent blocks, the quick sizes ---- */
+.round-canvas{position:relative;height:340px;border-radius:var(--radius-md);overflow:hidden;background:var(--surface-page);box-shadow:inset 0 0 0 1px var(--border-subtle)}
+.round-canvas .react-flow{width:100%;height:100%;background:var(--surface-page)}
+.round-canvas .react-flow__node{border-radius:var(--radius-md)}
+.round-canvas .react-flow__controls{box-shadow:var(--shadow-hairline);border-radius:var(--radius-sm);overflow:hidden}
+.round-canvas .board-issues{max-width:min(420px,70%);font-size:13px;padding:8px 12px}
+.board-legend--quiet{padding:6px 6px 6px 12px;gap:10px}
+.bn--seat .bn-head{gap:6px}
+.bn-order{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:var(--radius-pill);background:var(--ar-black);color:var(--ar-paper);font:600 10.5px var(--font-mono,ui-monospace)}
+.bn.is-seat-killed .bn-order{background:var(--ar-paper);color:var(--ar-black)}
+.bn.is-malicious .bn-order{box-shadow:0 0 0 2px var(--ar-sand)}
+.pal-quick{display:flex;align-items:center;gap:4px;padding:3px;border-radius:var(--radius-md);background:var(--surface-sunken);margin-bottom:4px}
+.pal-quick button{flex:1;border:0;background:transparent;padding:6px 0;border-radius:calc(var(--radius-md) - 2px);font:600 13px var(--font-mono,ui-monospace);color:var(--text-muted);cursor:pointer}
+.pal-quick button.is-on{background:var(--surface-card);color:var(--text-strong);box-shadow:var(--shadow-hairline)}
+.pal-quick .ar-caption{padding:0 8px 0 4px}
+.round-agents{display:flex;flex-direction:column;gap:8px}
+.round-agents .seg{margin-top:0}
+.round-agents .seg button{font-family:var(--font-mono,ui-monospace)}
+@media (max-width:900px){.round-canvas{height:300px}}

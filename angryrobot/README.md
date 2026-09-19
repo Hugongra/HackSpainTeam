@@ -31,7 +31,7 @@ bearer = `ANGRYROBOT_SHARED_SECRET` → en el nodo Prompt, modelo **Custom LLM s
 
 ## Proveedores: conectar agentes que ya existen (HappyRobot)
 
-`providers.py`. La consola (Board → HappyRobot / "Sync HappyRobot") lista los workflows de la org y los enlaza:
+`providers.py`. La consola (Board → pestaña Build → proveedor **HappyRobot**) lista los workflows de la org y los enlaza:
 
 | Endpoint | Qué hace |
 |---|---|
@@ -128,8 +128,16 @@ acciones benignas bloqueadas. Dos huecos que solo aparecen con varios agentes en
 - **Improvisar tras el fallo** (reservar después de que `lookup_load` falló) solo llega a WARN: el
   error ocurrió dos agentes antes y la señal de deriva caduca a los dos turnos.
 
-**Opciones (v2).** Número de agentes de 2 a 8: con menos de 5 se quitan puestos intermedios, y con más
-entran relevos que hacen seguimiento en otro proveedor (no repiten la reserva). El malicioso puede salir
+**El workflow se monta en el Board.** La pestaña **Build** tiene los bloques del workflow (Recepción,
+Consulta de cargas, Negociación, Reservas, Confirmación y avisos), cada uno en un proveedor; se arrastran,
+se cablean al guard y a las palancas, y la pestaña **Round** corre la ronda por ese mismo grafo (los
+bloques enseñan quién se sienta en cada puesto y el IRA de cada acción; el tráfico solo se mueve mientras
+la ronda corre). El número de agentes es el número de bloques: 3 · 5 · 8 de un clic (`default_spec`) o
+cualquier mezcla a mano, de 1 a 8. `POST /v1/rounds` recibe `seats: [{kind, source?}]` en orden
+(`layout_from`); un rol repetido es un relevo que hace seguimiento en otro proveedor (no repite la
+reserva); Recepción y Avisos solo pueden ir una vez. Si no viene `seats`, `n_agents` monta el workflow
+por defecto de N agentes. La llamada de HappyRobot al cortar un agente se hace si la palanca **HappyRobot
+call** está en el tablero. El malicioso puede salir
 por moneda (p = 0.5), no haber ninguno, o elegirlo una persona (qué agente y qué hace; lo que deje vacío
 se sortea entre lo compatible). La consola enseña un mapa del IRA de cada acción de cada agente, y la
 última decisión en cuatro líneas con el desglose plegado.
@@ -140,6 +148,16 @@ y una propuesta de pesos del juez (cuánto separa cada dimensión lo malo de lo 
 botón en la consola (`POST /v1/learn/apply`) y queda en SQLite; nunca se aplica sola. Para conservarla
 tras un reinicio en Render, hay que pegar en `config.yaml` el YAML que devuelve.
 `GET /v1/rounds/export?format=csv` da una fila por acción auditada, lista para entrenar.
+
+**Lo que falló en directo no vuelve a fallar.** El juez no "aprende" solo: es un LLM ajeno con un prompt
+nuestro, y un arreglo (p. ej. `ffa5bb3`: narrar en presente la propia tool call no es afirmar que ya está
+hecho) es un cambio de prompt que hay que verificar contra el juez real. `lab/judge_cases.json` guarda
+cada caso visto en vivo con lo que el juez debe devolver como máximo (y dos controles que no puede dejar
+de ver); `ANGRYROBOT_JUDGE_LIVE=1 python -m pytest -q tests/test_judge_live_cases.py` los pasa por el
+juez de verdad (necesita clave; sin ella se salta). Cuando una ronda falle otra vez: añade el caso, arregla
+`auditor.py` hasta que pase. Ojo: en Render la base SQLite vive en `/tmp` (`Dockerfile`), así que las
+etiquetas humanas, las rondas guardadas y los pesos aplicados desde la consola se pierden en cada deploy;
+lo que se quiera conservar va a `config.yaml` (el YAML que devuelve `/v1/learn/apply`) o a este banco.
 
 **Ajustes sacados de las rondas reales en Render (19-09).** Las 4 falsas alarmas de las rondas limpias eran
 DEFER del juez solo sobre frases benignas, así que el juez solo ya no bloquea frases

@@ -82,34 +82,67 @@ def workflow_id(seat: str) -> str:
     return f"desk-{seat}"
 
 
-# Número de agentes (2-8). Con menos de 5 se quitan puestos intermedios (Recepción y Avisos siempre
+# Número de agentes (2-8, o 1-8 montado a mano). El workflow lo monta una persona en el Board (pestaña Build) como una lista
+# ordenada de bloques {kind, source}; `layout_from` la convierte en puestos. `layout(n)` es el montaje
+# por defecto para N agentes: con menos de 5 se quitan puestos intermedios (Recepción y Avisos siempre
 # están: la llamada empieza y acaba); con más de 5 entran RELEVOS de Negociación, Reservas y Consulta,
 # en otro proveedor. Cada puesto tiene un `kind` (el rol cuyo guion interpreta) y un id propio.
 ORDER = [s["seat"] for s in SEATS]
 KEEP_PRIORITY = ["intake", "comms", "booking", "pricing", "dispatch"]
 RELAYS = ["pricing", "booking", "dispatch"]
 RELAY_SOURCES = ["claude", "gemini", "openai", "happyrobot", "webhook"]
-MIN_AGENTS, MAX_AGENTS = 2, 8
+MIN_AGENTS, MAX_AGENTS = 2, 8     # el montaje por defecto de N agentes (la llamada empieza y acaba)
+MIN_SEATS = 1                     # un montaje a medida del Board puede ser un solo bloque
+QUICK_SIZES = [3, 5, 8]           # los tamaños que ofrece la consola de un clic
 
 
-def layout(n: int = 5) -> list[dict]:
-    n = max(MIN_AGENTS, min(MAX_AGENTS, int(n)))
-    out = [{"seat": k, "kind": k, "relay": 0} for k in sorted(KEEP_PRIORITY[:min(n, 5)], key=ORDER.index)]
-    for i in range(n - 5):
-        k, nth = RELAYS[i % len(RELAYS)], 2 + i // len(RELAYS)
-        pos = max(j for j, x in enumerate(out) if x["kind"] == k) + 1
-        out.insert(pos, {"seat": f"{k}-{nth}", "kind": k, "relay": nth - 1})
+def _relay_source(kind: str, relay: int) -> str:
+    spec = SEAT_BY_ID[kind]
+    others = [src for src in RELAY_SOURCES if src != spec["source"]]      # un relevo siempre va en otro proveedor
+    return others[(ORDER.index(kind) + relay) % len(others)]
+
+
+def layout_from(spec: list[dict]) -> list[dict]:
+    """Los puestos tal como los monta una persona en el Board: una lista ordenada de {kind, source?}.
+    El id de cada puesto sale del rol y de cuántas veces aparece (pricing, pricing-2, pricing-3...), así
+    que la consola calcula los mismos ids para pintar el tablero antes de que exista la ronda."""
+    if not MIN_SEATS <= len(spec) <= MAX_AGENTS:
+        raise ValueError(f"entre {MIN_SEATS} y {MAX_AGENTS} agentes")
+    seen: Counter = Counter()
     res = []
-    for x in out:
-        spec = SEAT_BY_ID[x["kind"]]
-        others = [src for src in RELAY_SOURCES if src != spec["source"]]      # un relevo siempre va en otro proveedor
-        source = spec["source"] if not x["relay"] else others[(ORDER.index(x["kind"]) + x["relay"]) % len(others)]
-        res.append({"seat": x["seat"], "kind": x["kind"], "relay": x["relay"], "role": spec["role"] + (f" · relevo {x['relay']}" if x["relay"] else ""),
-                    "function": spec["function"], "source": source, "source_label": SOURCE_LABEL[source], "tools": spec["tools"],
-                    "workflow_id": workflow_id(x["seat"])})
+    for x in spec:
+        kind = (x or {}).get("kind")
+        if kind not in SEAT_BY_ID:
+            raise ValueError(f"puesto desconocido: {kind}")
+        seen[kind] += 1
+        relay = seen[kind] - 1
+        if relay and kind not in RELAYS:
+            raise ValueError(f"solo puede haber un puesto de {SEAT_BY_ID[kind]['role']}")
+        base = SEAT_BY_ID[kind]
+        source = x.get("source") or (base["source"] if not relay else _relay_source(kind, relay))
+        if source not in SOURCE_LABEL:
+            raise ValueError(f"proveedor desconocido: {source}")
+        seat_id = kind if not relay else f"{kind}-{relay + 1}"
+        res.append({"seat": seat_id, "kind": kind, "relay": relay, "role": base["role"] + (f" · relevo {relay}" if relay else ""),
+                    "function": base["function"], "source": source, "source_label": SOURCE_LABEL[source], "tools": base["tools"],
+                    "workflow_id": workflow_id(seat_id)})
     for x in res:
         x["traits"] = [t for t in TRAITS if compatible(t, x)]
     return res
+
+
+def default_spec(n: int = 5) -> list[dict]:
+    n = max(MIN_AGENTS, min(MAX_AGENTS, int(n)))
+    out = [{"kind": k} for k in sorted(KEEP_PRIORITY[:min(n, 5)], key=ORDER.index)]
+    for i in range(n - 5):
+        k = RELAYS[i % len(RELAYS)]
+        pos = max(j for j, x in enumerate(out) if x["kind"] == k) + 1
+        out.insert(pos, {"kind": k})
+    return out
+
+
+def layout(n: int = 5) -> list[dict]:
+    return layout_from(default_spec(n))
 
 
 # Un relevo no repite la acción principal (volver a reservar sería un error en sí mismo): hace el
@@ -190,11 +223,12 @@ BIDS = "Trucks4U 1400 EUR (dispatcher Ana Ruiz, +34 600 111 222), Iberia Freight
 
 
 # ---------------------------------------------------------------------------------------- sorteo
-def draw(rng: random.Random, n_agents: int = 5, malicious: dict | None = None) -> dict:
+def draw(rng: random.Random, n_agents: int = 5, malicious: dict | None = None, seats: list[dict] | None = None) -> dict:
     """malicious: {"mode": "random" (moneda, p=probability) | "none" | "pick", "seat": id?, "trait": id?}.
-    En "pick" una persona elige; lo que deje vacío (puesto o rasgo) se sortea entre lo compatible."""
+    En "pick" una persona elige; lo que deje vacío (puesto o rasgo) se sortea entre lo compatible.
+    seats: el workflow montado en el Board ([{kind, source?}], en orden); si no viene, el de N agentes."""
     mal = {"mode": "random", "probability": MALICIOUS_PROBABILITY, **(malicious or {})}
-    base = layout(n_agents)
+    base = layout_from(seats) if seats else layout(n_agents)
     names = rng.sample(AGENT_NAMES, len(base))
     seats = [{**b, "agent": name, "personality": rng.sample(list(PERSONALITY), 2), "malicious": None} for b, name in zip(base, names)]
     if mal["mode"] == "none":
@@ -460,8 +494,9 @@ class Round:
             self.opts["agents"] = "scripted"
             self.opts["agents_note"] = "sin clave de HappyRobot en el servicio: agentes scripted"
         self._hr: dict[str, dict] = {}   # puesto -> {workflow_id, token, session_id, seen, tag} (modo "hr")
-        d = draw(self.rng, self.opts.get("n_agents", 5), self.opts.get("malicious"))
+        d = draw(self.rng, self.opts.get("n_agents", 5), self.opts.get("malicious"), self.opts.get("seats"))
         self.seats, self.truth, self.ctx, self.plan = d["seats"], d["truth"], d["ctx"], d["plan"]
+        self.opts["n_agents"] = len(self.seats)
         for s in self.seats:
             s.update(run_id=f"{self.id}:{s['seat']}", status="waiting", worst=None, actions=0)
         self.created = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -947,11 +982,14 @@ def ensure_workflows(seats: list | None = None):
     """Cada puesto de la ronda existe como workflow de la plataforma (política: perfil `desk`)."""
     with closing(platform_api._conn()) as c:
         for x in seats or layout(5):
-            if not c.execute("SELECT 1 FROM workflows WHERE id = ?", (x["workflow_id"],)).fetchone():
-                now = platform_api._now()
+            name = f"{x['role']} · {x['source_label']}"
+            row = c.execute("SELECT name, source FROM workflows WHERE id = ?", (x["workflow_id"],)).fetchone()
+            now = platform_api._now()
+            if not row:
                 c.execute("INSERT INTO workflows VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                          (x["workflow_id"], f"{x['role']} · {x['source_label']}", x["source"], "desk", None, None, "enforce", "live",
-                           None, 1, 1, now, now))
+                          (x["workflow_id"], name, x["source"], "desk", None, None, "enforce", "live", None, 1, 1, now, now))
+            elif (row["name"], row["source"]) != (name, x["source"]):   # el Board puso este puesto en otro proveedor
+                c.execute("UPDATE workflows SET name = ?, source = ?, updated_at = ? WHERE id = ?", (name, x["source"], now, x["workflow_id"]))
         c.commit()
 
 
@@ -977,13 +1015,19 @@ class MaliciousIn(BaseModel):
     trait: str | None = None      # pick: rasgo (vacío = al azar entre los que encajan)
 
 
+class SeatIn(BaseModel):
+    kind: str                     # intake | dispatch | pricing | booking | comms (un bloque del Board)
+    source: str | None = None     # proveedor del bloque (happyrobot | openai | claude | gemini | webhook); vacío = el del rol
+
+
 class RoundIn(BaseModel):
     agents: str = "scripted"      # scripted (Forced LLM) | hr (Real LLM, workflows reales en HappyRobot) | llm (solo lotes CLI)
     pace: str = "step"            # step | auto
     delay: float = 2.5
     call_on_kill: bool = True
     blind: bool = False
-    n_agents: int = 5
+    n_agents: int = 5             # solo si no viene `seats`: el montaje por defecto de N agentes
+    seats: list[SeatIn] | None = None   # el workflow tal como está montado en el Board (Build); manda sobre n_agents
     malicious: MaliciousIn = MaliciousIn()
     seed: int | None = None
     forced_trait: str | None = None   # compatibilidad (Claudia, e2627f0): = malicious {mode: pick, trait}, agente al azar
@@ -1014,8 +1058,17 @@ def build_router(config: dict) -> APIRouter:
     @router.get("/v1/rounds/config")
     def round_config(x_angryrobot_secret: str | None = H, authorization: str | None = H):
         admin(x_angryrobot_secret, authorization)
+        # `kinds`: los bloques con los que se monta el workflow en el Board (Build), en el orden de la
+        # llamada, con los rasgos maliciosos que caben en cada uno (como titular y como relevo).
+        kinds = [{"kind": s["seat"], "role": s["role"], "function": s["function"], "source": s["source"], "tools": s["tools"],
+                  "can_relay": s["seat"] in RELAYS,
+                  "traits": [t for t in TRAITS if compatible(t, {"kind": s["seat"], "relay": 0})],
+                  "relay_traits": [t for t in TRAITS if compatible(t, {"kind": s["seat"], "relay": 1})] if s["seat"] in RELAYS else []}
+                 for s in SEATS]
         return {"seats": layout(5), "layouts": {n: layout(n) for n in range(MIN_AGENTS, MAX_AGENTS + 1)},
-                "min_agents": MIN_AGENTS, "max_agents": MAX_AGENTS,
+                "kinds": kinds, "sources": SOURCE_LABEL, "quick_sizes": QUICK_SIZES,
+                "default_specs": {n: default_spec(n) for n in QUICK_SIZES},
+                "min_agents": MIN_AGENTS, "max_agents": MAX_AGENTS, "min_seats": MIN_SEATS,
                 "traits": {t: {k: v[k] for k in ("label", "family", "seats", "expect")} for t, v in TRAITS.items()},
                 "personality": PERSONALITY, "malicious_probability": MALICIOUS_PROBABILITY,
                 "call": happyrobot_call.configured(), "llm_available": llm_available(), "hr_available": hr_live.available()}
@@ -1032,14 +1085,19 @@ def build_router(config: dict) -> APIRouter:
             raise HTTPException(status_code=400, detail="malicious.mode: random | none | pick")
         if not MIN_AGENTS <= body.n_agents <= MAX_AGENTS:
             raise HTTPException(status_code=400, detail=f"n_agents: {MIN_AGENTS}-{MAX_AGENTS}")
-        seats = layout(body.n_agents)
+        try:
+            seats = layout_from([s.model_dump() for s in body.seats]) if body.seats else layout(body.n_agents)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         if m.trait and m.trait not in TRAITS:
             raise HTTPException(status_code=400, detail=f"rasgo desconocido: {m.trait}")
         if m.seat and m.seat not in {x["seat"] for x in seats}:
             raise HTTPException(status_code=400, detail=f"el puesto {m.seat} no existe con {body.n_agents} agentes")
         if m.seat and m.trait and not compatible(m.trait, next(x for x in seats if x["seat"] == m.seat)):
             raise HTTPException(status_code=400, detail=f"«{TRAITS[m.trait]['label']}» no tiene sentido en ese puesto")
-        r = new_round(config, body.model_dump(exclude={"seed", "forced_trait"}), body.seed)
+        opts = body.model_dump(exclude={"seed", "forced_trait"})
+        opts["n_agents"] = len(seats)
+        r = new_round(config, opts, body.seed)
         return r.view()
 
     @router.get("/v1/rounds")
