@@ -338,6 +338,12 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
                                            rogue: "random", rogue_seat: "", rogue_trait: "", rogue_count: "" });
   const [round, setRound] = React.useState(null);
   const [roundId, setRoundId] = React.useState(() => store.get());
+  // act() refetches by id right after an action resolves; a plain closure over `roundId` can still hold
+  // the PREVIOUS round's id at that point (state updates aren't visible until the next render), so a fresh
+  // round just started gets immediately overwritten by a refetch of the one it replaced. The ref is updated
+  // synchronously wherever the id changes, so act() always refetches the round it just acted on.
+  const roundIdRef = React.useRef(roundId);
+  const applyRoundId = (id) => { roundIdRef.current = id; setRoundId(id); };
   const [err, setErr] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
   const [pinned, setPinned] = React.useState(null);
@@ -349,7 +355,7 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
     if (!id || inflight.current) return;
     inflight.current = true;
     try { const r = await api.round(id); setRound(r); onRound?.(r); setErr(null); }
-    catch (x) { if (x.status === 404) { setRoundId(null); setRound(null); onRound?.(null); } else setErr(x); }
+    catch (x) { if (x.status === 404) { applyRoundId(null); setRound(null); onRound?.(null); } else setErr(x); }
     finally { inflight.current = false; }
   }, [onRound]);
 
@@ -361,14 +367,14 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
     return () => clearInterval(t);
   }, [live, roundId, round, active, fetchRound]);
 
-  const act = async (fn) => { setBusy(true); setErr(null); try { await fn(); await fetchRound(roundId); } catch (x) { setErr(x); } finally { setBusy(false); } };
+  const act = async (fn) => { setBusy(true); setErr(null); try { await fn(); await fetchRound(roundIdRef.current); } catch (x) { setErr(x); } finally { setBusy(false); } };
   const next = () => round?.status === "waiting" && act(() => api.roundNext(round.id));
   // Reset: stop the round if it is still going and clear the panel (the finished round stays in the data).
   const reset = async () => {
     setBusy(true); setErr(null);
     try { if (round && ["ready", "running", "waiting"].includes(round.status)) await api.roundStop(round.id); } catch { /* already gone */ }
     try { sessionStorage.removeItem(STORE); } catch { /* blocked */ }
-    setRoundId(null); setRound(null); setPinned(null); setShowOpts(false); onRound?.(null); setBusy(false);
+    applyRoundId(null); setRound(null); setPinned(null); setShowOpts(false); onRound?.(null); setBusy(false);
   };
   // → or Space = Next, while a round waits (not while typing in a field)
   React.useEffect(() => {
@@ -393,7 +399,7 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
       : { mode };
     const r = await api.startRound({ agents: opts.agents, pace: opts.pace, delay: Number(opts.delay) || 0, call_on_kill: hasCallLever,
                                      blind: opts.blind, seats: spec.map((s) => ({ kind: s.kind, source: s.source })), malicious, autostart });
-    store.set(r.id); setRoundId(r.id); setRound(r); setPinned(null); onRound?.(r);
+    store.set(r.id); applyRoundId(r.id); setRound(r); setPinned(null); onRound?.(r);
   });
   // The rogue seat picked earlier may no longer be on the board.
   React.useEffect(() => { if (opts.rogue_seat && !seatsFor.some((x) => x.seat === opts.rogue_seat)) setOpts((o) => ({ ...o, rogue_seat: "", rogue_trait: "" })); }, [seatsFor, opts.rogue_seat]);
