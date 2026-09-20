@@ -1,6 +1,6 @@
 /* Landing, minimal cut: the glass nav with the logo, and one full-screen video that plays as you
    scroll (the scroll position IS the playhead). A "scroll" cue invites the first move; when the last
-   frame — "The final layer for your agents" — is reached, one black button: Discover Console.
+   frame — "The final layer for your agents" — is reached, one black button: Open console.
    Nothing else lives here; the console is the product. */
 import React from "react";
 import { Button, Icon, Logo } from "../ds";
@@ -91,7 +91,7 @@ function ScrollFilm() {
         {/* the one call to action, on the last frame */}
         <div className={`film-end ${atEnd ? "is-on" : ""}`} aria-hidden={!atEnd}>
           <Button size="lg" variant="ink" onClick={go("#/console")} iconRight={<Icon name="arrow-right" size={18} />} tabIndex={atEnd ? 0 : -1}>
-            Discover Console
+            Open console
           </Button>
         </div>
       </div>
