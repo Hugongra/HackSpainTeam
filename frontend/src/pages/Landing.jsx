@@ -7,8 +7,9 @@ import { Button, Icon, Logo } from "../ds";
 
 const go = (hash) => () => { window.location.hash = hash; };
 const VIDEO = `${import.meta.env.BASE_URL}video/intro.mp4`;
-const POSTER = `${import.meta.env.BASE_URL}video/intro-first.jpg`;   // frame 0 (blank): never spoils the ending
+const POSTER = `${import.meta.env.BASE_URL}video/intro-first.jpg`;   // the frame at START_T: HappyRobot already on screen
 const LAST = `${import.meta.env.BASE_URL}video/intro-last.jpg`;
+const START_T = 0.8;            // s — skip the blank lead-in; the HappyRobot logo is fully drawn here
 const SCROLL_VH = 380;          // how many viewport-heights of scroll the whole video spans
 const END_AT = 0.965;           // progress at which the last frame counts as reached
 
@@ -39,6 +40,9 @@ function ScrollFilm() {
     const sec = secRef.current, vid = vidRef.current;
     if (!sec || !vid) return undefined;
     let raf = 0, alive = true;
+    // The story depends on scroll position: always start from the top (a refresh would otherwise restore mid-film).
+    if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
+    window.scrollTo(0, 0);
     const measure = () => {
       const r = sec.getBoundingClientRect();
       const span = Math.max(1, r.height - window.innerHeight);
@@ -51,7 +55,7 @@ function ScrollFilm() {
       if (Math.abs(d) > 0.0005) {
         shown.current += d * 0.18;
         if (vid.duration && vid.readyState >= 1) {
-          const t = shown.current * vid.duration;
+          const t = START_T + shown.current * (vid.duration - START_T);
           if (Math.abs(vid.currentTime - t) > 1 / 60) vid.currentTime = t;
         }
         setProgress(shown.current);
@@ -76,7 +80,7 @@ function ScrollFilm() {
           <img className="film-video is-ready" src={LAST} alt="The final layer for your agents" />
         ) : (
           <video ref={vidRef} className={`film-video ${ready ? "is-ready" : ""}`} src={VIDEO} poster={POSTER}
-                 muted playsInline preload="auto" onLoadedMetadata={() => setReady(true)} onError={() => setFailed(true)} tabIndex={-1} />
+                 muted playsInline preload="auto" onLoadedMetadata={(e) => { e.currentTarget.currentTime = START_T; setReady(true); }} onError={() => setFailed(true)} tabIndex={-1} />
         )}
         {/* invitation to scroll — fades as soon as the film starts */}
         <button type="button" className="film-cue" onClick={scrollNext} aria-label="Scroll down"
