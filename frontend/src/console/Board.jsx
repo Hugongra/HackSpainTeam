@@ -641,7 +641,7 @@ function BoardInner({ live, refreshKey, initial }) {
   const [round, setRound] = React.useState(null);
   const inRound = leftTab === "round";
   // A real phone call is announced from both tabs; "Follow" opens it on the Round tab (angryrobot/live_call.py).
-  const { call: liveCall, active: callActive } = useLiveCall(live);
+  const { call: liveCall, active: callActive } = useLiveCall(live);   // la llamada que está sonando, si la hay
   const [hidCall, setHidCall] = React.useState(null);
   const shownCall = liveCall && liveCall.id !== hidCall ? liveCall : null;
   const [following, setFollowing] = React.useState(false);

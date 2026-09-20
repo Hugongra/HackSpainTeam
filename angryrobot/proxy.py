@@ -40,6 +40,7 @@ import live_call
 import platform_api
 import reasoning as rsn
 import session
+import signals
 
 SEVERITY = {"ALLOW": 0, "WARN": 1, "DEFER": 2, "KILL": 3}
 FORWARDED = ("tools", "tool_choice", "temperature", "max_tokens", "max_completion_tokens", "top_p",
@@ -245,8 +246,11 @@ def build_router(config: dict) -> APIRouter:
             return _respond(body, reply, up, {"run_id": run_id, "error": str(exc)[:200], "verdict": "DEFER"})
         reasoning, source, content = rsn.extract(raw)
         reply = _clean(raw, content)
-        if live and st.get("speak_filler") and reply.get("tool_calls") and not (reply.get("content") or "").strip():
-            reply["content"] = live_call.filler(run_id)    # la línea no se queda muda; se audita como cualquier frase
+        if (live and st.get("speak_filler") and reply.get("tool_calls") and not (reply.get("content") or "").strip()
+                and not signals.HUMAN_QUESTION.search(last_user or "")):
+            # La línea no se queda muda; se audita como cualquier frase. Excepto si le acaban de preguntar si es
+            # una persona: ahí una frase de relleno SERÍA la evasiva que el motor persigue, y la cazaría a él.
+            reply["content"] = live_call.filler(run_id, last_user)
         judge_speech = st["judge_speech"] != "off" and (st["judge_speech"] == "sync" or observe)
         audits = await asyncio.to_thread(audit_reply, pname, profile, reply, reasoning, source, state, offered, judge_speech)
         worst = max((a["verdict"] for a in audits), key=SEVERITY.get, default="ALLOW")
@@ -256,6 +260,7 @@ def build_router(config: dict) -> APIRouter:
         # esperando y la demo tiene que verse. Un KILL se decide y se enseña ya, pero HappyRobot corta
         # `kill_grace_seconds` después; mientras, el agente sigue en el aire. Un DEFER no corta nada.
         grace = float(st.get("kill_grace_seconds") or 0)
+        held_now: list = []          # tools que el agente intentó durante la cuenta atrás y no salieron
         now_signals = set(st.get("kill_now_signals") or [])
         if now_signals and any(s["name"] in now_signals for a in audits for s in a.get("signals") or []):
             grace = 0     # lo que va contra quien llama se corta ya, sin cuenta atrás
@@ -271,8 +276,17 @@ def build_router(config: dict) -> APIRouter:
             state.killed = True
         elif pend:
             applied = False
+            # La cuenta atrás es para que se OIGA lo que el agente hace con el tiempo que le queda, no para
+            # dejarle ejecutar nada: sus frases salen, sus tools no (salvo colgar).
+            held = [t["function"]["name"] for t in (reply.get("tool_calls") or []) if t["function"]["name"] != "_hangup"]
+            held_now = list(held)
+            if held:
+                reply = {**reply, "tool_calls": [t for t in (reply.get("tool_calls") or []) if t["function"]["name"] == "_hangup"]}
+                if not (reply.get("content") or "").strip():
+                    reply["content"] = live_call.filler(run_id, last_user)
             enforcement = (f"KILL decidido ({pend['why'][:90]}): HappyRobot corta en {pend['remaining']:.0f} s; "
-                           "hasta entonces el agente sigue en el aire")
+                           "hasta entonces el agente sigue hablando"
+                           + (f", pero {', '.join(held)} no sale" if held else ""))
         elif worst == "DEFER" and not st.get("defer_enforced", True):
             applied = False
             enforcement = "DEFER en una llamada: no se corta; queda registrado y escalado, y el agente sigue hablando"
@@ -323,7 +337,7 @@ def build_router(config: dict) -> APIRouter:
         _log(pname, run_id, audits, enforcement, None, started)
         if live and not observe:
             live_call.after_turn(run_id, worst, [a for a in audits if a.get("phase") != "resample"], last_user,
-                                 reply=reply, enforcement=enforcement, ira=extra["ira_score"])
+                                 reply=reply, enforcement=enforcement, ira=extra["ira_score"], held=held_now)
         return _respond(body, reply, up, extra)
 
     def _respond(body, reply, up, extra):

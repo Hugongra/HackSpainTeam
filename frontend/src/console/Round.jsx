@@ -238,21 +238,27 @@ export function useLiveCall(live) {
   React.useEffect(() => { if (!live) return undefined; const t = setInterval(() => setTick((n) => n + 1), 2000); return () => clearInterval(t); }, [live]);
   const [list] = useAsync(() => (live ? api.liveCalls(12).catch(() => null) : Promise.resolve(null)), [live, tick]);
   const id = list.data?.active || detail?.id || null;
-  // While the call is on the line it is polled faster than the list; once it is over, one last read and stop.
+  // The fast poll only runs while the call is ON THE LINE. Once it is over the last read stands: a finished
+  // call must not leave a heartbeat every 900 ms against a free Render instance for the rest of the session.
+  const over = detail?.id === id && detail?.status && detail.status !== "running";
   React.useEffect(() => {
-    if (!live || !id) return undefined;
+    if (!live || !id || over) return undefined;
     let alive = true;
     const pull = async () => {
       if (busy.current) return;
       busy.current = true;
-      try { const v = await api.liveCall(id); if (alive) setDetail(v); } catch { if (alive) setDetail(null); } finally { busy.current = false; }
+      // A 404 means the service has no live-call view (older deploy): drop the flow rather than break the
+      // console. Any other failure is a blip — keep showing the last state instead of blanking mid-demo.
+      try { const v = await api.liveCall(id); if (alive) setDetail(v); }
+      catch (x) { if (alive && x?.status === 404) setDetail(null); }
+      finally { busy.current = false; }
     };
     pull();
     const t = setInterval(pull, 900);
     return () => { alive = false; clearInterval(t); };
-  }, [live, id]);
+  }, [live, id, over]);
   const call = detail && detail.id === id ? detail : null;
-  return { call, active: Boolean(list.data?.active), unsupported: list.error?.status === 404 };
+  return { call, active: Boolean(list.data?.active) && call?.status === "running" };
 }
 
 /* The announcement: shown above the tabs, so a call is visible from Round and from Build. */
@@ -282,12 +288,14 @@ export function LiveCallBar({ call, active, onFollow, onDismiss, following }) {
 /* The one-agent flow: the same IRA map and decision panel a round uses, fed with the call. */
 export function LiveCallFlow({ call }) {
   const [pinned, setPinned] = React.useState(null);
+  React.useEffect(() => { setPinned(null); }, [call.id]);   // otra llamada, otra acción seleccionada
   const events = call.events || [];
   const agentEvents = events.filter((e) => e.kind === "agent");
   const shown = (pinned != null && agentEvents.find((e) => e.i === pinned)) || agentEvents[agentEvents.length - 1];
   const seat = call.seats?.[0];
   const kill = call.kill;
   const alert = call.call;
+  const heldTools = [...new Set(events.flatMap((e) => e.held_tools || []))];
   return (
     <>
       <Card padding={14} eyebrow={`LIVE CALL · ${(CALL_STATUS[call.status] || [])[1] || call.status}`} ground={call.status === "killed" ? "sand" : "paper"}>
@@ -302,6 +310,9 @@ export function LiveCallFlow({ call }) {
             : <>The countdown is up: HappyRobot cuts the call on the agent's next turn.</>}</p>
         )}
         {kill?.fired && <p className="ar-small">The countdown ran out: the call was cut and the agent was told so out loud.</p>}
+        {heldTools.length > 0 && (
+          <p className="ar-caption muted">Held while the countdown runs: <b>{heldTools.join(", ")}</b> — the agent said it was doing them, the call never did.</p>
+        )}
         <IraMap round={call} selected={shown?.i} onSelect={setPinned} />
       </Card>
       {shown && (
