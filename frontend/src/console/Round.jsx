@@ -386,7 +386,7 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
   const traitOptions = Object.entries(cfg?.data?.traits || {}).filter(([k]) => (pickedSeat ? (pickedSeat.traits || []).includes(k) : canPlay.has(k)));
   const quick = cfg?.data?.quick_sizes || [3, 5, 8];
   const isDefault = (n) => { const d = cfg?.data?.default_specs?.[n]; return d ? d.length === spec.length && d.every((s, i) => s.kind === spec[i]?.kind) : spec.length === n; };
-  const phone = cfg?.data?.call?.phone || "+34648545124";
+  const phone = cfg?.data?.call?.phone || "+34722222624";
   const randomize = (autostart = false, mode = opts.rogue) => spec.length && act(async () => {
     const malicious = mode === "pick" ? { mode: "pick", seat: opts.rogue_seat || null, trait: opts.rogue_trait || null }
       : mode === "crisis" ? { mode: opts.rogue_count === "all" ? "all" : "crisis", ...(opts.rogue_count && opts.rogue_count !== "all" ? { count: Number(opts.rogue_count) } : {}) }

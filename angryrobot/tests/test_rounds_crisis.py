@@ -141,7 +141,7 @@ def test_without_kill_operations_leads_and_channels_fall_back_to_what_is_configu
     if not r.crisis.detected:
         pytest.skip("con esta semilla los dos DEFER no caen en la ventana")
     plan = next(e for e in r.events if e["kind"] == "crisis_plan")["notices"]
-    assert plan[0]["to"] == "Responsable de operaciones" and plan[0]["channel"] == "sms" and plan[0]["target_label"] == "+346…681"
+    assert plan[0]["to"] == "Responsable de operaciones" and plan[0]["channel"] == "sms" and plan[0]["target_label"] == "+347…624"
     assert plan[0]["message"] == "Mon amour, les agents ont torné rogue!! Besu!!" == notify.sms_message()    # el texto fijo del segundo grado
     assert [n["channel"] for n in r.crisis.notices].count("sms") == 1                                         # y solo un SMS por crisis
     assert all(n["channel"] == "webhook" for n in plan[1:])                                                    # los responsables, por lo que haya: webhook
@@ -305,11 +305,11 @@ def test_sms_channel_by_happyrobot_webhook_or_twilio(monkeypatch):
     sent = []
     monkeypatch.setattr(notify.requests, "post", lambda url, **kw: sent.append((url, kw)) or _Resp(201 if "twilio" in url else 200, {"sid": "SM1", "ok": True}))
     assert notify.notify("sms", None, "x")["status"] == "not_configured"                       # sin nada: no sale, y lo dice
-    assert notify.configured()["sms"] == {"ready": False, "target": "+346…681", "how": "not configured"}
+    assert notify.configured()["sms"] == {"ready": False, "target": "+347…624", "how": "not configured"}
     monkeypatch.setenv("HAPPYROBOT_SMS_WEBHOOK_URL", "https://workflows.platform.eu.happyrobot.ai/hooks/sms1")
     rec = notify.notify("sms", None, notify.sms_message(), {"round_id": "r-1"}, to="Responsable de operaciones", priority=1)
-    assert rec["status"] == "sent" and rec["target"] == "+34689257681" and notify.configured()["sms"]["how"] == "HappyRobot webhook"
-    assert sent[-1][0].endswith("/hooks/sms1") and sent[-1][1]["json"] == {"phone_number": "+34689257681", "message": "Mon amour, les agents ont torné rogue!! Besu!!"}
+    assert rec["status"] == "sent" and rec["target"] == "+34722222624" and notify.configured()["sms"]["how"] == "HappyRobot webhook"
+    assert sent[-1][0].endswith("/hooks/sms1") and sent[-1][1]["json"] == {"phone_number": "+34722222624", "message": "Mon amour, les agents ont torné rogue!! Besu!!"}
     monkeypatch.delenv("HAPPYROBOT_SMS_WEBHOOK_URL")
     monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACtest"); monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok"); monkeypatch.setenv("TWILIO_FROM", "+16402214277")
     monkeypatch.setenv("ANGRYROBOT_SMS_PHONE", "+34600000001"); monkeypatch.setenv("ANGRYROBOT_SMS_MESSAGE", "hola")
