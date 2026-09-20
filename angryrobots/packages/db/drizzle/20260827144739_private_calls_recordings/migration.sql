@@ -1,1 +1,0 @@
-ALTER TABLE "calls" DROP COLUMN "recording_url";

@@ -1,1 +1,0 @@
-ALTER TABLE "agents" RENAME COLUMN "draft_config" TO "config";

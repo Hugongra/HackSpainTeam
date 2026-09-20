@@ -1,1 +1,0 @@
-ALTER TABLE "calls" ADD COLUMN "variables" jsonb;

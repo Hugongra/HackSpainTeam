@@ -14,15 +14,10 @@ Repositorio del equipo HackSpain '26 · HappyRobot track.
 
 *Coming soon — the live demo will be a separate video.*
 
-> ⚠️ **`angryrobot/` vs `angryrobots/`** — dos carpetas, nombres casi idénticos, cosas distintas:
-> - **`angryrobot/`** (singular) — **nuestro entregable**: el servicio guardián/auditor (FastAPI, Python), desplegado en Render vía [`render.yaml`](render.yaml).
-> - **`angryrobots/`** (plural) — el fork de PhoneFlow que usamos **solo como inspiración al principio** (UI del builder). No se ejecuta ni se despliega; Pages sirve `frontend/`.
-
 | Folder | What |
 |---|---|
 | [`knowledge/`](knowledge/README.md) | Shared, published research — start with the index and read in order |
 | [`angryrobot/`](angryrobot/README.md) | **Deliverable** — the guardian/audit service (FastAPI). Deployed on Render (`render.yaml`, rootDir `angryrobot`) |
-| [`angryrobots/`](angryrobots/README.md) | **Inspiration only** — a fork of [getphoneflow/phoneflow](https://github.com/getphoneflow/phoneflow) we looked at for the builder UI at the start. Not run, not deployed; kept for reference |
 | [`frontend/`](frontend/README.md) | **AngryRobot web** — landing + operator console on the new design system, deployed to GitHub Pages via `.github/workflows/pages.yml` |
 | [`insights/`](insights/README.md) | Personal work folders (one per person); promote to `knowledge/` when it becomes team truth |
 | [`tools/`](tools/README.md) | All the scripts, in two groups: `hr_*` talk to the HappyRobot API (watcher, probes, live rogue lab), `ar_*` are the guard and its test bench (engine, fixtures, [red-team generator](knowledge/16-rogue-agent-factory.md), scorer, dashboard). Run them from the repo root |

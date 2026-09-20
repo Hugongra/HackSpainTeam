@@ -5,8 +5,8 @@
    Round: run a round of random agents (one of them maybe malicious) through EXACTLY that graph, and watch
    every action's IRA move along it. The number of agents is the number of blocks on the board (3 · 5 · 8
    in one click, or any mix by hand). Traffic only moves on the edges while something is actually
-   running. The canvas pattern is lifted from PhoneFlow's builder
-   (angryrobots/apps/app/src/components/flow): React Flow + custom nodes with Handles + a side panel. */
+   running. The canvas pattern follows PhoneFlow's builder (github.com/getphoneflow/phoneflow,
+   apps/app/src/components/flow): React Flow + custom nodes with Handles + a side panel. */
 import React from "react";
 import {
   Background, BaseEdge, ControlButton, Controls, EdgeLabelRenderer, Handle, Position, ReactFlow, ReactFlowProvider,

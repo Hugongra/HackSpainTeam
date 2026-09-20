@@ -6,7 +6,6 @@
 # the service must list this Pages origin in ANGRYROBOT_CORS_ORIGINS. No secret is ever built in:
 # operators paste the shared secret in the console, and it stays in their browser tab.
 #
-# The previous PhoneFlow-fork app (angryrobots/apps/app) is no longer deployed here; its code is untouched.
 name: pages
 
 on:
