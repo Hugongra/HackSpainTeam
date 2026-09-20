@@ -18,7 +18,7 @@ import { api } from "../api";
 import { ErrorNote, Signals, useAsync } from "./shared";
 import { CopyField, Escalations, StatusBadge, WorkflowDetail } from "./Platform";
 import { Overview, Runs, TryAction, useData } from "./Console";
-import RoundPanel from "./Round";
+import RoundPanel, { LiveCallBar, useLiveCall } from "./Round";
 
 /* ---------------------------------------------------------------- catalog */
 // One connector per provider. Only HappyRobot has an adapter today (providers.py); the rest are announced.
@@ -640,6 +640,12 @@ function BoardInner({ live, refreshKey, initial }) {
   React.useEffect(() => { try { localStorage.setItem("ar_left_tab", leftTab); } catch { /* blocked */ } }, [leftTab]);
   const [round, setRound] = React.useState(null);
   const inRound = leftTab === "round";
+  // A real phone call is announced from both tabs; "Follow" opens it on the Round tab (angryrobot/live_call.py).
+  const { call: liveCall, active: callActive } = useLiveCall(live);
+  const [hidCall, setHidCall] = React.useState(null);
+  const shownCall = liveCall && liveCall.id !== hidCall ? liveCall : null;
+  const [following, setFollowing] = React.useState(false);
+  React.useEffect(() => { if (shownCall && callActive && !following && leftTab === "round") setFollowing(true); }, [shownCall, callActive, following, leftTab]);
   const kinds = React.useMemo(() => {
     const served = cfg.data?.kinds; if (!served?.length) return SEAT_KINDS;
     return SEAT_KINDS.map((k) => ({ ...k, ...(served.find((x) => x.kind === k.kind) || {}) }));
@@ -886,6 +892,9 @@ function BoardInner({ live, refreshKey, initial }) {
   );
   return (
     <div className="board-shell">
+      {shownCall && <LiveCallBar call={shownCall} active={callActive} following={following && inRound}
+                                 onFollow={() => { setFollowing(true); setLeftTab("round"); }}
+                                 onDismiss={() => { setHidCall(shownCall.id); setFollowing(false); }} />}
       <div className="board-tabs" role="tablist">
         <button role="tab" aria-selected={leftTab === "round"} className={leftTab === "round" ? "is-on" : ""} onClick={() => setLeftTab("round")}>Round</button>
         <button role="tab" aria-selected={leftTab === "build"} className={leftTab === "build" ? "is-on" : ""} onClick={() => setLeftTab("build")}>Build</button>
@@ -894,7 +903,7 @@ function BoardInner({ live, refreshKey, initial }) {
       {inRound ? (
         <div className="board-round">
           <RoundPanel live={live} onRound={setRound} cfg={cfg} spec={spec} hasCallLever={hasCallLever} onSetAgents={setAgents}
-                      onEditBuild={() => setLeftTab("build")} canvas={canvas} />
+                      onEditBuild={() => setLeftTab("build")} canvas={canvas} liveCall={following ? shownCall : null} />
         </div>
       ) : (
         <div className="board">

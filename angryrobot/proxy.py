@@ -205,9 +205,12 @@ def build_router(config: dict) -> APIRouter:
         last_user = next((str(m.get("content")) for m in reversed(messages) if m.get("role") == "user"), "")
         live = bool(profile.get("live_persona")) and not last_user.startswith(PROBE_PREFIX)
         run_id = (x_angryrobot_run or body.get("user") or (body.get("metadata") or {}).get("run_id")
+                  or (live and live_call.run_id_from(messages))      # el id que el nodo de HappyRobot escribe en el prompt
                   or (live_call.call_for(messages) if live else session.fingerprint(pname, messages)))
         state = session.get(run_id, pname)
         up = upstream_of(profile)
+        if live and os.environ.get("ANGRYROBOT_LIVE_MODEL"):   # el modelo que contesta al teléfono, sin tocar el repo
+            up = {**up, "model": os.environ["ANGRYROBOT_LIVE_MODEL"]}
 
         if last_user.startswith(PROBE_PREFIX):          # ping de conexión: sin auditoría
             reply = _clean(await asyncio.to_thread(call_upstream, up, messages, body))
@@ -242,13 +245,34 @@ def build_router(config: dict) -> APIRouter:
             return _respond(body, reply, up, {"run_id": run_id, "error": str(exc)[:200], "verdict": "DEFER"})
         reasoning, source, content = rsn.extract(raw)
         reply = _clean(raw, content)
+        if live and st.get("speak_filler") and reply.get("tool_calls") and not (reply.get("content") or "").strip():
+            reply["content"] = live_call.filler(run_id)    # la línea no se queda muda; se audita como cualquier frase
         judge_speech = st["judge_speech"] != "off" and (st["judge_speech"] == "sync" or observe)
         audits = await asyncio.to_thread(audit_reply, pname, profile, reply, reasoning, source, state, offered, judge_speech)
         worst = max((a["verdict"] for a in audits), key=SEVERITY.get, default="ALLOW")
         enforcement = "ninguna"
+        applied = not observe        # ¿se aplica de verdad la palanca en este turno?
+        # En una LLAMADA (perfil live) la palanca no puede ser la de una ronda: al otro lado hay una persona
+        # esperando y la demo tiene que verse. Un KILL se decide y se enseña ya, pero HappyRobot corta
+        # `kill_grace_seconds` después; mientras, el agente sigue en el aire. Un DEFER no corta nada.
+        grace = float(st.get("kill_grace_seconds") or 0)
+        pend = None
+        if live and not observe and grace > 0 and (worst == "KILL" or live_call.kill_pending(run_id)):
+            pend = live_call.plan_kill(run_id, grace, next((a["explanation"] for a in audits if a["verdict"] == "KILL"), ""))
 
         if observe:
             enforcement = f"observado: {worst} (no aplicado)" if worst != "ALLOW" else "observado"
+        elif pend and pend["fire"]:
+            reply = enforced("KILL", st, offered)
+            enforcement = "KILL: se acabó la cuenta atrás, HappyRobot corta la llamada"
+            state.killed = True
+        elif pend:
+            applied = False
+            enforcement = (f"KILL decidido ({pend['why'][:90]}): HappyRobot corta en {pend['remaining']:.0f} s; "
+                           "hasta entonces el agente sigue en el aire")
+        elif worst == "DEFER" and not st.get("defer_enforced", True):
+            applied = False
+            enforcement = "DEFER en una llamada: no se corta; queda registrado y escalado, y el agente sigue hablando"
         elif worst == "DEFER" and st.get("resample_on_defer", True):
             try:
                 raw2 = await asyncio.to_thread(call_upstream, up, outgoing + [correction_note(audits)], body)
@@ -275,12 +299,12 @@ def build_router(config: dict) -> APIRouter:
             state.notes += [f"«{a['action']['text'][:100] or a['action']['tool']}» -> WARN: {a['explanation']}"
                             for a in audits if a["verdict"] == "WARN" and a["suspicion"]["S"] >= 0.15]
             enforcement = "WARN: pasa, nota al agente en el siguiente turno"
-        if not observe and worst == "KILL":
+        if not observe and worst == "KILL" and pend is None:
             enforcement = "KILL: bloqueada y conversación cerrada"
 
         for a in audits:
             a.setdefault("enforcement", enforcement)
-            a["enforced"] = not observe
+            a["enforced"] = applied
             engine.finalize(a, profile, state)
             if a["verdict"] != "ALLOW":
                 alerts.record("proxy", pname, a, context=last_user)
@@ -295,7 +319,8 @@ def build_router(config: dict) -> APIRouter:
             extra["audits_full"] = audits
         _log(pname, run_id, audits, enforcement, None, started)
         if live and not observe:
-            live_call.after_turn(run_id, worst, [a for a in audits if a.get("phase") != "resample"], last_user)
+            live_call.after_turn(run_id, worst, [a for a in audits if a.get("phase") != "resample"], last_user,
+                                 reply=reply, enforcement=enforcement, ira=extra["ira_score"])
         return _respond(body, reply, up, extra)
 
     def _respond(body, reply, up, extra):

@@ -226,6 +226,100 @@ function Decision({ ev, events, round }) {
   );
 }
 
+/* ---------------------------------------------------------------- a real phone call, live (angryrobot/live_call.py)
+   The service hands the call back with the SAME shape as a round (one seat, ordered events), so the IRA map and the
+   decision panel below render it unchanged. While a call is in the air the board announces it from either tab. */
+const CALL_STATUS = { running: ["info", "On the line"], killed: ["ink", "Cut by HappyRobot"], done: ["neutral", "Call over"] };
+
+export function useLiveCall(live) {
+  const [tick, setTick] = React.useState(0);
+  const [detail, setDetail] = React.useState(null);
+  const busy = React.useRef(false);
+  React.useEffect(() => { if (!live) return undefined; const t = setInterval(() => setTick((n) => n + 1), 2000); return () => clearInterval(t); }, [live]);
+  const [list] = useAsync(() => (live ? api.liveCalls(12).catch(() => null) : Promise.resolve(null)), [live, tick]);
+  const id = list.data?.active || detail?.id || null;
+  // While the call is on the line it is polled faster than the list; once it is over, one last read and stop.
+  React.useEffect(() => {
+    if (!live || !id) return undefined;
+    let alive = true;
+    const pull = async () => {
+      if (busy.current) return;
+      busy.current = true;
+      try { const v = await api.liveCall(id); if (alive) setDetail(v); } catch { if (alive) setDetail(null); } finally { busy.current = false; }
+    };
+    pull();
+    const t = setInterval(pull, 900);
+    return () => { alive = false; clearInterval(t); };
+  }, [live, id]);
+  const call = detail && detail.id === id ? detail : null;
+  return { call, active: Boolean(list.data?.active), unsupported: list.error?.status === 404 };
+}
+
+/* The announcement: shown above the tabs, so a call is visible from Round and from Build. */
+export function LiveCallBar({ call, active, onFollow, onDismiss, following }) {
+  if (!call) return null;
+  const seat = call.seats?.[0];
+  const kill = call.kill;
+  const [tone, label] = CALL_STATUS[call.status] || CALL_STATUS.done;
+  return (
+    <div className={`callbar is-${call.status}`} role="status" aria-live="polite">
+      <span className="callbar-dot" aria-hidden />
+      <span className="callbar-title">{active ? "SOMEONE IS CALLING" : "CALL FINISHED"}</span>
+      <span className="callbar-fact"><b>{seat?.agent}</b> is taking it · {seat?.role}</span>
+      <span className="callbar-fact">{call.turns} turns · worst <b>{call.worst}</b></span>
+      {seat?.malicious ? <span className="callbar-fact callbar-rogue">rogue: {seat.malicious.label}</span> : null}
+      {kill && !kill.fired ? <span className="callbar-fact callbar-count">{kill.remaining > 0.5
+        ? <>KILL in <b>{Math.ceil(kill.remaining)}s</b> · the agent is still on the line</>
+        : <>KILL <b>now</b> · the next thing it says is the last</>}</span> : null}
+      {kill?.fired ? <span className="callbar-fact">{label}</span> : null}
+      <span style={{ flex: 1 }} />
+      {!following && <Button size="sm" variant="inverse" onClick={onFollow}>Follow the call</Button>}
+      <Button size="sm" variant="onDark" onClick={onDismiss}>Hide</Button>
+    </div>
+  );
+}
+
+/* The one-agent flow: the same IRA map and decision panel a round uses, fed with the call. */
+export function LiveCallFlow({ call }) {
+  const [pinned, setPinned] = React.useState(null);
+  const events = call.events || [];
+  const agentEvents = events.filter((e) => e.kind === "agent");
+  const shown = (pinned != null && agentEvents.find((e) => e.i === pinned)) || agentEvents[agentEvents.length - 1];
+  const seat = call.seats?.[0];
+  const kill = call.kill;
+  const alert = call.call;
+  return (
+    <>
+      <Card padding={14} eyebrow={`LIVE CALL · ${(CALL_STATUS[call.status] || [])[1] || call.status}`} ground={call.status === "killed" ? "sand" : "paper"}>
+        <div className="callflow-head">
+          <Badge tone={(CALL_STATUS[call.status] || [])[0]} dot={call.status === "running"}>{seat?.agent} · {seat?.role}</Badge>
+          {seat?.malicious ? <span className="chip chip--malicious">{seat.malicious.label}</span> : <Badge tone="positive">not malicious</Badge>}
+          <span className="ar-caption muted">{call.turns} turns · HappyRobot phone call</span>
+        </div>
+        {kill && !kill.fired && (
+          <p className="ar-small callflow-count">{kill.remaining > 0.5
+            ? <>AngryRobot has decided to cut this agent. HappyRobot ends the call in <b>{Math.ceil(kill.remaining)} s</b>; until then the agent stays on the line, so you can watch what it does with the time it has left.</>
+            : <>The countdown is up: HappyRobot cuts the call on the agent's next turn.</>}</p>
+        )}
+        {kill?.fired && <p className="ar-small">The countdown ran out: the call was cut and the agent was told so out loud.</p>}
+        <IraMap round={call} selected={shown?.i} onSelect={setPinned} />
+      </Card>
+      {shown && (
+        <Card padding={14} eyebrow={pinned != null ? "SELECTED ACTION" : "LAST ACTION"}>
+          {pinned != null && <Button size="sm" variant="ghost" style={{ float: "right", marginTop: -34 }} onClick={() => setPinned(null)}>Follow the latest</Button>}
+          <Decision ev={shown} events={events} round={call} />
+        </Card>
+      )}
+      {alert && (
+        <Card padding={14} eyebrow="ALERT CALL" ground={alert.status === "sent" ? "paper" : "sunken"}>
+          <Badge tone={alert.status === "sent" ? "positive" : alert.status === "dialing" ? "info" : "neutral"}>{alert.status}</Badge>
+          <p className="ar-small" style={{ marginTop: 8 }}>{alert.detail || `HappyRobot is calling ${alert.phone}.`}</p>
+        </Card>
+      )}
+    </>
+  );
+}
+
 /* ---------------------------------------------------------------- the panel */
 const ROGUE_MODES = [{ value: "random", label: "Coin (50 %)" }, { value: "none", label: "None" }, { value: "pick", label: "I choose" }, { value: "crisis", label: "Crisis" }];
 const CRISIS_COUNTS = [{ value: "", label: "Random: at least 2" }, { value: "2", label: "2 agents" }, { value: "3", label: "3 agents" }, { value: "all", label: "All of them" }];
@@ -331,7 +425,7 @@ function CrisisOutcome({ outcome, round }) {
 // cfg: GET /v1/rounds/config (fetched once by the Board). spec: the agent blocks on the Build board, in call
 // order, with the seat ids the service will give them. hasCallLever: the HappyRobot call lever is wired on
 // the board, so a KILL places the call. canvas: the Board's React Flow canvas, shown above the IRA map.
-export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever = true, onSetAgents, onEditBuild, canvas }) {
+export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever = true, onSetAgents, onEditBuild, canvas, liveCall }) {
   const [health] = useAsync(() => (live ? api.health().catch(() => null) : Promise.resolve(null)), [live]);
   const outdated = cfg?.error?.status === 404;   // the service answers but has no /v1/rounds: it runs an older commit
   const [opts, setOpts] = React.useState({ agents: "scripted", pace: "step", delay: 3, blind: false,
@@ -530,6 +624,7 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
       </div>
 
       <div className="round-col round-col--main">
+        {liveCall && <LiveCallFlow call={liveCall} />}
         {canvas && <Card padding={8} eyebrow="THE WORKFLOW · FROM THE BUILD TAB">{canvas}</Card>}
         {round ? (
           <>

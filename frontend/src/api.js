@@ -73,6 +73,8 @@ export const api = {
   liveSettings: () => call("/v1/live/settings"),
   setLiveSettings: (mode, trait) => call("/v1/live/settings", { method: "POST", body: { mode, trait: trait || null } }),
   liveCalls: (limit = 12) => call(`/v1/live/calls?limit=${limit}`),
+  // One call, shaped like a round (seats + ordered events), so the console draws it with the same pieces
+  liveCall: (runId, since = 0) => call(`/v1/live/calls/${encodeURIComponent(runId)}?since=${since}`),
   // Crisis mode: several rogues at once, detection, real notices in severity order, limited operators (angryrobot/crisis.py)
   crisisConfig: () => call("/v1/crisis/config"),
   crisisOperators: () => call("/v1/crisis/operators"),
