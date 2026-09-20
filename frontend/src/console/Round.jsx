@@ -471,10 +471,9 @@ export default function RoundPanel({ live, onRound, cfg, spec = [], hasCallLever
       <div className="round-go">
         <Button onClick={() => { setShowOpts(false); randomize(true); }} disabled={busy || !spec.length} iconLeft={<Icon name="arrow-right" size={16} />}>Start round</Button>
         <Button variant="secondary" onClick={() => { setShowOpts(false); randomize(false); }} disabled={busy || !spec.length} iconLeft={<Icon name="refresh" size={16} />}>Randomize only</Button>
-        <Button variant="ink" onClick={() => { setShowOpts(false); randomize(true, "crisis"); }} disabled={busy || !spec.length || !round} iconLeft={<Icon name="siren" size={16} />}
-                title={round ? undefined : "Run a round first — Crisis unlocks once one is going"}>Crisis</Button>
+        <Button variant="ink" onClick={() => { setShowOpts(false); randomize(true, "crisis"); }} disabled={busy || !spec.length} iconLeft={<Icon name="siren" size={16} />}>Crisis</Button>
       </div>
-      <p className="ar-caption muted">Start round draws the agents and the call begins. Randomize only draws them so you can look first, then press Start the call. Crisis makes two or more agents rogue at once and the system has to notice, adapt and act.{!round && " Run a round first to unlock it."}</p>
+      <p className="ar-caption muted">Start round draws the agents and the call begins. Randomize only draws them so you can look first, then press Start the call. Crisis makes two or more agents rogue at once and the system has to notice, adapt and act.</p>
       {!spec.length && <p className="ar-caption" style={{ color: "var(--status-negative)" }}>No agent blocks on the board. Pick 3 · 5 · 8 above or build the workflow on the Build tab.</p>}
     </div>
   );
