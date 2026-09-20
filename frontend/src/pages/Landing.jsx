@@ -1,121 +1,95 @@
-/* Marketing surface, minimal cut: full-bleed hero, a scroll-revealed swarm of agent chips, the video
-   slot in a glass frame, then the one call to action. Everything pops in with an overshoot bounce —
-   no fades. No info sections — that content lives in the console. */
+/* Landing, minimal cut: the glass nav with the logo, and one full-screen video that plays as you
+   scroll (the scroll position IS the playhead). A "scroll" cue invites the first move; when the last
+   frame — "The final layer for your agents" — is reached, one black button: Discover Console.
+   Nothing else lives here; the console is the product. */
 import React from "react";
 import { Button, Icon, Logo } from "../ds";
 
 const go = (hash) => () => { window.location.hash = hash; };
-
-/** Pops `children` in with an overshoot bounce once scrolled into view (or immediately if `eager`). */
-function Reveal({ children, className = "", style, delay = 0, eager = false, as: As = "div" }) {
-  const ref = React.useRef(null);
-  const [on, setOn] = React.useState(eager);
-  React.useEffect(() => {
-    if (eager) return undefined;
-    const el = ref.current;
-    if (!el) return undefined;
-    const io = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) setOn(true); }, { threshold: 0.35 });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [eager]);
-  return (
-    <As ref={ref} className={`${className} ${on ? "pop-in" : "pop-pending"}`} style={{ animationDelay: `${delay}ms`, ...style }}>
-      {children}
-    </As>
-  );
-}
+const VIDEO = `${import.meta.env.BASE_URL}video/intro.mp4`;
+const POSTER = `${import.meta.env.BASE_URL}video/intro-first.jpg`;   // frame 0 (blank): never spoils the ending
+const LAST = `${import.meta.env.BASE_URL}video/intro-last.jpg`;
+const SCROLL_VH = 380;          // how many viewport-heights of scroll the whole video spans
+const END_AT = 0.965;           // progress at which the last frame counts as reached
 
 function Nav() {
   return (
-    <div className="nav-shell nav-shell--dark">
+    <div className="nav-shell nav-shell--dark nav-shell--film">
       <div className="nav-pill">
         <a href="#/" aria-label="AngryRobot home" style={{ display: "inline-flex" }}><Logo variant="lockup" tone="paper" height={22} /></a>
         <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
-          <Button size="sm" variant="inverse" className="pop-hover" onClick={go("#/console")}>Open console</Button>
+          <Button size="sm" variant="inverse" onClick={go("#/console")}>Open console</Button>
         </div>
       </div>
     </div>
   );
 }
 
-function Hero() {
-  const scrollNext = () => document.getElementById("swarm")?.scrollIntoView({ behavior: "smooth" });
-  return (
-    <section className="hero hero--full" data-ground="dark">
-      <div className="hero-bg" aria-hidden>
-        <span className="hero-glow hero-glow--a" />
-        <span className="hero-glow hero-glow--b" />
-      </div>
-      <div className="wrap hero-inner hero-inner--center">
-        <Reveal as="h1" eager className="ar-display" style={{ maxWidth: "16ch", textAlign: "center", marginInline: "auto" }}>
-          The anger management layer for your agents
-        </Reveal>
-      </div>
-      <button type="button" className="scroll-cue pop-hover" onClick={scrollNext} aria-label="Scroll down">
-        <span className="ar-mono">SCROLL</span>
-        <Icon name="chevron-down" size={22} />
-      </button>
-    </section>
-  );
-}
+/** Scroll-driven video: progress through the tall section maps to video.currentTime, eased per frame. */
+function ScrollFilm() {
+  const secRef = React.useRef(null);
+  const vidRef = React.useRef(null);
+  const target = React.useRef(0);       // progress the scroll asks for
+  const shown = React.useRef(0);        // progress currently on screen (eased toward target)
+  const [progress, setProgress] = React.useState(0);
+  const [ready, setReady] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);   // video unavailable → last frame + button, nothing breaks
 
-/** ~18 agent chips, mostly calm (green), a few rogue (red) — pop in one by one, each with its own tilt. */
-function AgentSwarm() {
-  const ref = React.useRef(null);
-  const [visible, setVisible] = React.useState(false);
   React.useEffect(() => {
-    const el = ref.current;
-    if (!el) return undefined;
-    const io = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) setVisible(true); }, { threshold: 0.2 });
-    io.observe(el);
-    return () => io.disconnect();
+    const sec = secRef.current, vid = vidRef.current;
+    if (!sec || !vid) return undefined;
+    let raf = 0, alive = true;
+    const measure = () => {
+      const r = sec.getBoundingClientRect();
+      const span = Math.max(1, r.height - window.innerHeight);
+      target.current = Math.min(1, Math.max(0, -r.top / span));
+    };
+    const tick = () => {
+      if (!alive) return;
+      // ease toward the scroll target so the playhead never jumps
+      const d = target.current - shown.current;
+      if (Math.abs(d) > 0.0005) {
+        shown.current += d * 0.18;
+        if (vid.duration && vid.readyState >= 1) {
+          const t = shown.current * vid.duration;
+          if (Math.abs(vid.currentTime - t) > 1 / 60) vid.currentTime = t;
+        }
+        setProgress(shown.current);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    const onScroll = () => measure();
+    measure();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    raf = requestAnimationFrame(tick);
+    return () => { alive = false; cancelAnimationFrame(raf); window.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); };
   }, []);
-  const chips = React.useMemo(() => {
-    const rogueAt = new Set([2, 7, 11, 15]);
-    return Array.from({ length: 18 }, (_, i) => ({
-      bad: rogueAt.has(i),
-      size: 52 + ((i * 37) % 40),
-      lift: (i % 3) * 16,
-      rot: ((i * 53) % 34) - 17,
-    }));
-  }, []);
-  return (
-    <section id="swarm" className="band-dark swarm-section" data-ground="dark">
-      <div ref={ref} className="swarm-grid">
-        {chips.map((c, i) => (
-          <span key={i}
-                className={`swarm-chip pop-hover ${c.bad ? "is-bad" : "is-good"} ${visible ? "pop-in" : "pop-pending"}`}
-                style={{ width: c.size, height: c.size, marginTop: c.lift, "--rot": `${c.rot}deg`, animationDelay: `${i * 70}ms` }}>
-            <Icon name={c.bad ? "octagon" : "check"} size={Math.round(c.size * 0.4)} />
-          </span>
-        ))}
-      </div>
-    </section>
-  );
-}
 
-function VideoSection() {
-  return (
-    <section className="band-dark video-section" data-ground="dark">
-      <div className="wrap" style={{ display: "flex", justifyContent: "center" }}>
-        <Reveal className="video-slot pop-hover">
-          <span className="video-slot-play"><Icon name="zap" size={22} /></span>
-          <span className="ar-mono" style={{ color: "var(--text-on-dark-muted)" }}>VIDEO COMING SOON</span>
-        </Reveal>
-      </div>
-    </section>
-  );
-}
+  const atEnd = failed || progress >= END_AT;
+  const scrollNext = () => window.scrollBy({ top: window.innerHeight * 0.9, behavior: "smooth" });
 
-function ConsoleCta() {
   return (
-    <section className="band-dark" data-ground="dark" style={{ padding: "0 0 clamp(80px,10vw,120px)" }}>
-      <div className="wrap" style={{ display: "flex", justifyContent: "center" }}>
-        <Reveal>
-          <Button size="lg" variant="inverse" className="pop-hover" onClick={go("#/console")} iconRight={<Icon name="arrow-right" size={18} />}>
-            Open the console
+    <section ref={secRef} className="film" style={{ height: `${SCROLL_VH}vh` }} aria-label="AngryRobot">
+      <div className="film-sticky">
+        {failed ? (
+          <img className="film-video is-ready" src={LAST} alt="The final layer for your agents" />
+        ) : (
+          <video ref={vidRef} className={`film-video ${ready ? "is-ready" : ""}`} src={VIDEO} poster={POSTER}
+                 muted playsInline preload="auto" onLoadedMetadata={() => setReady(true)} onError={() => setFailed(true)} tabIndex={-1} />
+        )}
+        {/* invitation to scroll — fades as soon as the film starts */}
+        <button type="button" className="film-cue" onClick={scrollNext} aria-label="Scroll down"
+                style={{ opacity: progress < 0.04 ? 1 : 0, pointerEvents: progress < 0.04 ? "auto" : "none" }}>
+          <span className="ar-mono">SCROLL</span>
+          <span className="film-cue-line" />
+        </button>
+        {/* the one call to action, on the last frame */}
+        <div className={`film-end ${atEnd ? "is-on" : ""}`} aria-hidden={!atEnd}>
+          <Button size="lg" variant="ink" onClick={go("#/console")} iconRight={<Icon name="arrow-right" size={18} />} tabIndex={atEnd ? 0 : -1}>
+            Discover Console
           </Button>
-        </Reveal>
+        </div>
       </div>
     </section>
   );
@@ -125,10 +99,7 @@ export default function Landing() {
   return (
     <>
       <Nav />
-      <Hero />
-      <AgentSwarm />
-      <VideoSection />
-      <ConsoleCta />
+      <ScrollFilm />
     </>
   );
 }
