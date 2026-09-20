@@ -9,7 +9,7 @@
    (angryrobots/apps/app/src/components/flow): React Flow + custom nodes with Handles + a side panel. */
 import React from "react";
 import {
-  Background, BaseEdge, Controls, EdgeLabelRenderer, Handle, Position, ReactFlow, ReactFlowProvider,
+  Background, BaseEdge, ControlButton, Controls, EdgeLabelRenderer, Handle, Position, ReactFlow, ReactFlowProvider,
   addEdge, applyEdgeChanges, applyNodeChanges, getBezierPath, useNodesInitialized, useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -46,7 +46,7 @@ const DEFAULT_SPECS = { 3: ["intake", "booking", "comms"], 5: ORDER,
   8: ["intake", "dispatch", "dispatch", "pricing", "pricing", "booking", "booking", "comms"] };
 const QUICK_SIZES = [3, 5, 8];
 const LOGO_BASE = `${import.meta.env.BASE_URL}providers/`;
-const LOGO_FILES = new Set(["happyrobot"]);   // frontend/public/providers/<id>.svg that actually exist
+const LOGO_FILES = new Set(["happyrobot", "openai", "claude", "gemini"]);   // frontend/public/providers/<id>.svg that actually exist
 function ProviderLogo({ id, size = 22 }) {
   const [broken, setBroken] = React.useState(!LOGO_FILES.has(id));
   const cat = INPUTS[id] || INPUTS.webhook;
@@ -664,6 +664,14 @@ function BoardInner({ live, refreshKey, initial }) {
     ro.observe(el); return () => ro.disconnect();
   }, [flow, graphReady, inRound]);
   const [sel, setSel] = React.useState(initial || null);          // {type:'node'|'edge', id, tab?}
+  const [fullscreen, setFullscreen] = React.useState(false);
+  React.useEffect(() => {
+    if (!fullscreen) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") setFullscreen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
+  React.useEffect(() => { const t = setTimeout(() => flow.fitView({ padding: 0.15, duration: 200 }), 220); return () => clearTimeout(t); }, [fullscreen, flow]);
   const [busyAll, setBusyAll] = React.useState(false); const [allErr, setAllErr] = React.useState(null);
   const [provider, setProvider] = React.useState(null);           // which provider dialog is open
   const [provs] = useAsync(() => (live ? api.providers().then((d) => d.providers) : Promise.resolve([])), [live, refreshKey]);
@@ -859,7 +867,7 @@ function BoardInner({ live, refreshKey, initial }) {
     </div>
   );
   const canvas = (
-    <div className="canvas-wrap">{bar}
+    <div className={`canvas-wrap${fullscreen ? " is-fullscreen" : ""}`}>{bar}
     <div className={inRound ? "round-canvas" : "board-canvas"} ref={canvasRef} onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}>
       <ReactFlow nodes={shownNodes} edges={shownEdges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
         onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} isValidConnection={isValid}
@@ -867,7 +875,11 @@ function BoardInner({ live, refreshKey, initial }) {
         fitView fitViewOptions={{ padding: 0.2 }} minZoom={0.15} selectNodesOnDrag={false} proOptions={{ hideAttribution: true }} deleteKeyCode={inRound ? null : ["Backspace", "Delete"]}
         nodesDraggable={!inRound} nodesConnectable={!inRound} elementsSelectable>
         <Background gap={18} size={1} color="var(--ar-grey-300)" />
-        <Controls showInteractive={false} position="bottom-right" />
+        <Controls showInteractive={false} position="bottom-right">
+          <ControlButton onClick={() => setFullscreen((f) => !f)} title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}>
+            <Icon name={fullscreen ? "minimize" : "maximize"} size={14} />
+          </ControlButton>
+        </Controls>
       </ReactFlow>
     </div>
     </div>

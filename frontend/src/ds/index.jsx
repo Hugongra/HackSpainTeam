@@ -4,15 +4,16 @@
 import React from "react";
 import {
   Activity, AlertTriangle, ArrowRight, BookOpen, Brain, Check, ChevronDown, ChevronRight, Copy, Eye, FlaskConical,
-  Gauge, Hand, Octagon, Phone, Plug, RefreshCw, Search, Settings, ShieldAlert, Siren, Terminal, Wrench, X, Zap,
+  Gauge, Hand, Maximize2, Minimize2, Octagon, Phone, Plug, RefreshCw, Search, Settings, ShieldAlert, Siren, Terminal,
+  Wrench, X, Zap,
 } from "lucide-react";
 
 const ICONS = {
   activity: Activity, "alert-triangle": AlertTriangle, "arrow-right": ArrowRight, "book-open": BookOpen,
   brain: Brain, check: Check, "chevron-down": ChevronDown, "chevron-right": ChevronRight, copy: Copy, eye: Eye,
-  flask: FlaskConical, gauge: Gauge, hand: Hand, octagon: Octagon, phone: Phone, plug: Plug, refresh: RefreshCw,
-  search: Search, settings: Settings, "shield-alert": ShieldAlert, siren: Siren, terminal: Terminal,
-  wrench: Wrench, x: X, zap: Zap,
+  flask: FlaskConical, gauge: Gauge, hand: Hand, maximize: Maximize2, minimize: Minimize2, octagon: Octagon,
+  phone: Phone, plug: Plug, refresh: RefreshCw, search: Search, settings: Settings, "shield-alert": ShieldAlert,
+  siren: Siren, terminal: Terminal, wrench: Wrench, x: X, zap: Zap,
 };
 
 export function Icon({ name, size = 20, strokeWidth = 1.75, style }) {

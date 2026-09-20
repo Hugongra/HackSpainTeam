@@ -534,6 +534,10 @@ pre.code{margin:0;border-radius:var(--radius-md);padding:18px 20px;background:va
 .board-bar-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .round-canvas .board-bar,.canvas-wrap:has(.round-canvas) .board-bar{border:0;padding:4px 4px 8px;background:transparent}
 .board-canvas .react-flow,.round-canvas .react-flow{background:#FBFAF7}
+/* Fullscreen: the Board's expand control (react-flow Controls) covers the viewport instead of just fitting the view. Esc exits. */
+.canvas-wrap.is-fullscreen{position:fixed;inset:0;z-index:90;height:100vh;background:var(--surface-page);box-shadow:var(--shadow-lg)}
+.canvas-wrap.is-fullscreen .round-canvas{height:auto;flex:1}
+.canvas-wrap.is-fullscreen .board-canvas,.canvas-wrap.is-fullscreen .round-canvas{min-height:0}
 /* palette: white cards, full-colour text; a block already on the board says so instead of fading out */
 .pal-sec{background:var(--ar-white,#fff)}
 .pal-item{align-items:center;background:var(--ar-white,#fff);border:1px solid var(--ar-grey-200);color:var(--text-strong)}
