@@ -23,7 +23,9 @@ The secret stays in your browser tab only and is sent as a header, never in the 
 
 ## Demo
 
-*Coming soon — the live demo will be a separate video.*
+[![AngryRobot demo — full walkthrough](https://img.youtube.com/vi/eaWnMs7NiIE/maxresdefault.jpg)](https://youtu.be/eaWnMs7NiIE)
+
+▶️ **[Watch the demo on YouTube](https://youtu.be/eaWnMs7NiIE)** — full walkthrough of the AngryRobot platform and its features.
 
 | Folder | What |
 |---|---|
