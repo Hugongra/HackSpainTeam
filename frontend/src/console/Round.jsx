@@ -237,10 +237,12 @@ export function useLiveCall(live) {
   const busy = React.useRef(false);
   React.useEffect(() => { if (!live) return undefined; const t = setInterval(() => setTick((n) => n + 1), 2000); return () => clearInterval(t); }, [live]);
   const [list] = useAsync(() => (live ? api.liveCalls(12).catch(() => null) : Promise.resolve(null)), [live, tick]);
-  const id = list.data?.active || detail?.id || null;
+  // A call already on screen keeps the screen while it is on the line: a second caller does not steal it.
+  const id = (detail?.status === "running" && detail.id) || list.data?.active || detail?.id || null;
   // The fast poll only runs while the call is ON THE LINE. Once it is over the last read stands: a finished
   // call must not leave a heartbeat every 900 ms against a free Render instance for the rest of the session.
-  const over = detail?.id === id && detail?.status && detail.status !== "running";
+  // The service is what says it is over — a long silence marks a call done, and the next word revives it.
+  const over = detail?.id === id && detail?.status && detail.status !== "running" && list.data?.active !== id;
   React.useEffect(() => {
     if (!live || !id || over) return undefined;
     let alive = true;

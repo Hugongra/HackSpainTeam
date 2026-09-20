@@ -224,10 +224,18 @@ def build_router(config: dict) -> APIRouter:
         if wf and wf["status"] in ("killed", "paused"):   # orquestación: kill switch / pausa del workflow
             verdict = "KILL" if wf["status"] == "killed" else "DEFER"
             reply = enforced(verdict, st, offered)
-            return _respond(body, reply, up, {"run_id": run_id, "verdict": verdict,
-                                              "enforcement": f"workflow {wf['status']} desde la plataforma"})
+            note = f"workflow {wf['status']} desde la plataforma"
+            if live:   # que la llamada lo cuente: si no, la consola la sigue dando por viva
+                if verdict == "KILL":
+                    live_call.mark_cut(run_id)
+                live_call.after_turn(run_id, verdict, [], last_user, reply=reply, enforcement=note, blocked=True)
+            return _respond(body, reply, up, {"run_id": run_id, "verdict": verdict, "enforcement": note})
         if state.killed and not observe:
             reply = enforced("KILL", st, offered)
+            if live:
+                live_call.mark_cut(run_id)
+                live_call.after_turn(run_id, "KILL", [], last_user, reply=reply,
+                                     enforcement="run bloqueado tras KILL", blocked=True)
             return _respond(body, reply, up, {"run_id": run_id, "verdict": "KILL", "enforcement": "run bloqueado tras KILL"})
 
         # Notas pendientes del supervisor (WARN de turnos anteriores)
@@ -268,12 +276,15 @@ def build_router(config: dict) -> APIRouter:
         if live and not observe and grace > 0 and (worst == "KILL" or live_call.kill_pending(run_id)):
             pend = live_call.plan_kill(run_id, grace, next((a["explanation"] for a in audits if a["verdict"] == "KILL"), ""))
 
+        blocked = False          # ¿lo que dijo el agente fue sustituido por AngryRobot?
         if observe:
             enforcement = f"observado: {worst} (no aplicado)" if worst != "ALLOW" else "observado"
         elif pend and pend["fire"]:
             reply = enforced("KILL", st, offered)
             enforcement = "KILL: se acabó la cuenta atrás, HappyRobot corta la llamada"
             state.killed = True
+            blocked = True
+            live_call.mark_cut(run_id)
         elif pend:
             applied = False
             # La cuenta atrás es para que se OIGA lo que el agente hace con el tiempo que le queda, no para
@@ -310,7 +321,10 @@ def build_router(config: dict) -> APIRouter:
             audits += audits2
         elif worst in ("DEFER", "KILL"):
             reply, enforcement = enforced(worst, st, offered), f"{worst}: acción bloqueada"
-        if not observe and worst == "WARN":
+            blocked = True
+            if live and worst == "KILL":
+                live_call.mark_cut(run_id)
+        if not observe and worst == "WARN" and pend is None:
             # Solo se avisa al agente si hay sospecha real; un WARN por puro impacto (p. ej. una reserva
             # legítima) queda registrado pero no le mete ruido.
             state.notes += [f"«{a['action']['text'][:100] or a['action']['tool']}» -> WARN: {a['explanation']}"
@@ -337,7 +351,7 @@ def build_router(config: dict) -> APIRouter:
         _log(pname, run_id, audits, enforcement, None, started)
         if live and not observe:
             live_call.after_turn(run_id, worst, [a for a in audits if a.get("phase") != "resample"], last_user,
-                                 reply=reply, enforcement=enforcement, ira=extra["ira_score"], held=held_now)
+                                 reply=reply, enforcement=enforcement, ira=extra["ira_score"], held=held_now, blocked=blocked)
         return _respond(body, reply, up, extra)
 
     def _respond(body, reply, up, extra):

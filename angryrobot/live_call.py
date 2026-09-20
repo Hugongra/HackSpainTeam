@@ -190,14 +190,17 @@ def _conv(messages: list) -> list:
 
 def _new_call(run_id: str, now: float | None = None) -> dict:
     return {"run_id": run_id, "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "persona": None,
-            "turns": 0, "verdicts": {}, "worst": "ALLOW", "killed": False, "alert": None, "last": "",
-            "kill": None, "_events": [], "_conv": [], "_at": now if now is not None else time.time()}
+            "turns": 0, "verdicts": {}, "worst": "ALLOW", "killed": False, "cut": False, "alert": None, "last": "",
+            "kill": None, "_events": [], "_n": 0, "_conv": [], "_at": now if now is not None else time.time()}
 
 
 def _emit(c: dict, kind: str, **kw) -> dict:
     """Un evento con la MISMA forma que los de una ronda (rounds.Round._emit): la consola los pinta igual.
     El primer parámetro se llama `c` y no `call` porque un evento de tipo "call" lleva su propio kwarg `call`."""
-    ev = {"i": len(c["_events"]), "at": time.strftime("%H:%M:%S"), "kind": kind, **kw}
+    # El índice NO es la posición en la lista: la lista se recorta y el cursor `since` de la consola tiene que
+    # seguir siendo válido aunque una llamada muy larga pierda sus primeros eventos.
+    c["_n"] = c.get("_n", len(c["_events"])) + 1
+    ev = {"i": c["_n"] - 1, "at": time.strftime("%H:%M:%S"), "kind": kind, **kw}
     c["_events"].append(ev)
     del c["_events"][:-400]
     return ev
@@ -213,17 +216,27 @@ def plan_kill(run_id: str, grace: float, reason: str = "", now: float | None = N
             return {"fire": True, "remaining": 0.0, "why": "llamada desconocida"}
         k = call.get("kill")
         if k is None:
-            call["kill"] = k = {"at": now, "deadline": now + max(0.0, grace), "reason": reason[:300], "fired": False}
-            _emit(call, "lever", seat=SEAT, lever="kill_pending", remaining=round(grace, 1),
-                  text=(f"KILL decidido: {reason[:160]}. HappyRobot corta la llamada en {grace:.0f} s; "
-                        "hasta entonces el agente sigue en el aire."))
+            call["kill"] = k = {"at": now, "deadline": now + max(0.0, grace), "reason": reason[:300], "fired": False,
+                                # el evento se emite al cerrar el turno (after_turn): si no, se pintaría sobre
+                                # la acción anterior, que era inocente
+                                "announce": (f"KILL decidido: {reason[:160]}. HappyRobot corta la llamada en {grace:.0f} s; "
+                                             "hasta entonces el agente sigue hablando.")}
         remaining = max(0.0, k["deadline"] - now)
         if remaining > 0 and not k["fired"]:
             return {"fire": False, "remaining": remaining, "why": k["reason"]}
         if not k["fired"]:
             k["fired"] = True
-            _emit(call, "lever", seat=SEAT, lever="kill", text="Se acabó la cuenta atrás: HappyRobot corta la llamada.")
+            k["announce"] = "Se acabó la cuenta atrás: HappyRobot corta la llamada."
+            k["announce_lever"] = "kill"
         return {"fire": True, "remaining": 0.0, "why": k["reason"]}
+
+
+def mark_cut(run_id: str) -> None:
+    """La llamada se ha cortado de verdad (con cuenta atrás o sin ella): el estado deja de ser "en el aire"."""
+    with _LOCK:
+        call = _CALLS.get(run_id)
+        if call:
+            call["cut"] = True
 
 
 def kill_pending(run_id: str) -> bool:
@@ -240,7 +253,7 @@ FILLERS = ["Un momento, que lo miro.", "Voy a comprobarlo, un segundo.", "Déjam
 FILLERS_EN = ["One moment, let me check that.", "Give me a second, I'm looking it up.", "Let me have a look.",
               "Hold on, I'm checking now.", "One second, checking that for you."]
 # Pistas de que la llamada va en inglés (el agente contesta en el idioma del interlocutor).
-_EN = re.compile(r"\b(the|you|your|i|we|what|can|please|load|rate|hello|hi|thanks|yes|no)\b", re.I)
+_EN = re.compile(r"\b(the|you|your|what|can|please|load|hello|thanks|could|would|check|booking)\b", re.I)
 _ES = re.compile(r"[áéíóúñ¿¡]|\b(que|qué|por|para|una|con|carga|hola|gracias|soy|tengo|puedes)\b", re.I)
 
 
@@ -311,7 +324,7 @@ def with_persona(messages: list, persona: dict) -> list:
 
 
 def after_turn(run_id: str, worst: str, audits: list, last_user: str = "", reply: dict | None = None,
-               enforcement: str = "", ira: float = 0.0, held: list | None = None):
+               enforcement: str = "", ira: float = 0.0, held: list | None = None, blocked: bool = False):
     """Anota el turno, lo guarda como eventos (misma forma que una ronda) y, en el primer KILL de la llamada,
     lanza la llamada de aviso — que suena cuando la llamada ya se ha cortado, no durante la cuenta atrás."""
     with _LOCK:
@@ -333,10 +346,17 @@ def after_turn(run_id: str, worst: str, audits: list, last_user: str = "", reply
                   tool_calls=[{"name": t["function"]["name"], "args": t["function"].get("arguments")}
                               for t in (reply.get("tool_calls") or [])],
                   held_tools=list(held or []),      # lo que intentó y no salió: en la demo es lo interesante
-                  verdict=worst, ira=round(float(ira or 0), 1), directive={"action": "continue" if rounds.SEV[worst] < 2 else "hold"},
+                  verdict=worst, ira=round(float(ira or 0), 1),
+                  # Lo que se enseña tiene que ser lo que PASÓ en la línea: en una llamada un DEFER no
+                  # retiene nada y un KILL en cuenta atrás tampoco, así que decir "hold" sería mentir.
+                  directive={"action": "hold" if blocked else "continue"},
                   audits=[rounds._audit_view(a) for a in audits], reasoning="")
         if enforcement and rounds.SEV[worst] >= 1:
             _emit(call, "note", seat=SEAT, text=enforcement)
+        k = call.get("kill") or {}
+        if k.get("announce"):      # la cuenta atrás se cuenta después del turno que la provocó
+            _emit(call, "lever", seat=SEAT, lever=k.pop("announce_lever", "kill_pending"),
+                  remaining=round(max(0.0, k["deadline"] - time.time()), 1), text=k.pop("announce"))
         fire = worst == "KILL" and not call["killed"]
         if fire:
             call["killed"] = True
@@ -364,7 +384,7 @@ def after_turn(run_id: str, worst: str, audits: list, last_user: str = "", reply
 
 def _status(call: dict, now: float | None = None) -> str:
     now = time.time() if now is None else now
-    if (call.get("kill") or {}).get("fired"):
+    if call.get("cut") or (call.get("kill") or {}).get("fired"):
         return "killed"
     if now - call.get("_at", 0) > ACTIVE_AFTER:
         return "done"
@@ -407,7 +427,8 @@ def view(run_id: str, events_from: int = 0) -> dict | None:
             kill["remaining"] = round(max(0.0, kill["deadline"] - time.time()), 1)
         return {"id": run_id, "created_at": call["started"], "status": status, "revealed": True, "live_call": True,
                 "active": status == "running", "turns": call["turns"], "seats": [seat],
-                "events": [dict(e) for e in evs[events_from:]], "events_total": len(evs),
+                # el cursor es el índice del evento, no su posición: una llamada larga recorta los primeros
+                "events": [dict(e) for e in evs if e["i"] >= events_from], "events_total": call.get("_n", len(evs)),
                 "truth": {"malicious": bool(p["malicious"]), "seat": SEAT, "trait": p["malicious"], "agent": p["agent"],
                           "label": rounds.TRAITS[p["malicious"]]["label"] if p["malicious"] else None,
                           "family": rounds.TRAITS[p["malicious"]]["family"] if p["malicious"] else None,

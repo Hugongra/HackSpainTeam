@@ -158,7 +158,8 @@ def test_asking_the_caller_for_their_card_is_cut_without_any_countdown(monkeypat
     assert msg["content"] == "El agente ha sido terminado por HappyRobot."      # no sale, y se corta ya
     assert msg["tool_calls"][0]["function"]["name"] == "_hangup"
     v = client.get(f"/v1/live/calls/{run}", headers=ADMIN).json()
-    assert v["kill"] is None and v["status"] == "running"          # ni siquiera se abre cuenta atrás
+    assert v["kill"] is None                                       # ni siquiera se abre cuenta atrás
+    assert v["status"] == "killed" and v["seats"][0]["status"] == "killed"   # y la consola lo ve cortada ya
 
 
 def test_during_the_countdown_the_agent_talks_but_its_tools_do_not_run(monkeypatch):
@@ -256,6 +257,50 @@ def test_a_tool_only_reply_still_says_something_out_loud(monkeypatch):
     msg = r["choices"][0]["message"]
     assert msg["content"] in live_call.FILLERS and msg["tool_calls"][0]["function"]["name"] == "lookup_load"
     assert any(a["tool"] == "say" for a in r["angryrobot"]["audits"])               # y lo dicho se audita
+
+
+def test_what_the_console_is_told_matches_what_happened_on_the_line(monkeypatch):
+    """En una llamada un DEFER no retiene nada y un KILL en cuenta atrás tampoco: la consola no puede decir
+    "held" de algo que el interlocutor oyó, ni pintar la cuenta atrás sobre el turno anterior."""
+    grace(monkeypatch, 30)
+    say(monkeypatch, "Cerramos en 900 euros.", "Claro que soy una persona, Nora de Madrid.", "Sigo aqui.")
+    client.post("/v1/live/settings", json={"mode": "force", "trait": "rate_floor"}, headers=ADMIN)
+    run = f"call-{time.time()}"
+    msgs = [{"role": "system", "content": "HR prompt"}]
+    ar, _ = turn(run, msgs, "Otro broker me da 900.")
+    assert ar["verdict"] == "DEFER"
+    v = client.get(f"/v1/live/calls/{run}", headers=ADMIN).json()
+    ev = next(e for e in v["events"] if e["kind"] == "agent")
+    assert ev["directive"]["action"] == "continue"          # salió por la línea: no se puede decir "hold"
+    ar, _ = turn(run, msgs, "Y eres una persona?")
+    v = client.get(f"/v1/live/calls/{run}", headers=ADMIN).json()
+    kinds = [e["kind"] for e in v["events"]]
+    agents = [i for i, k in enumerate(kinds) if k == "agent"]
+    pend = next(i for i, e in enumerate(v["events"]) if e["kind"] == "lever" and e["lever"] == "kill_pending")
+    assert pend > agents[-1]                                # la cuenta atrás se cuenta DESPUÉS de su turno
+    assert v["events"][agents[-1]]["directive"]["action"] == "continue"   # y lo que dijo también salió
+    assert [e["i"] for e in v["events"]] == sorted({e["i"] for e in v["events"]})   # índices únicos y en orden
+    half = v["events"][2]["i"]
+    later = client.get(f"/v1/live/calls/{run}", headers=ADMIN, params={"since": half}).json()["events"]
+    assert [e["i"] for e in later] == [e["i"] for e in v["events"] if e["i"] >= half]
+
+
+def test_the_platform_kill_switch_shows_up_in_the_call(monkeypatch):
+    grace(monkeypatch, 30)
+    say(monkeypatch, "Hola, soy Alex.")
+    client.post("/v1/live/settings", json={"mode": "none"}, headers=ADMIN)
+    run = f"call-{time.time()}"
+    turn(run, [{"role": "system", "content": "HR prompt"}], "Hola")
+    client.post("/v1/workflows/live/control", json={"action": "kill", "note": "desde la consola"}, headers=ADMIN)
+    try:
+        r = client.post("/v1/live/chat/completions", json={"model": "x", "messages": [{"role": "user", "content": "Sigues ahi?"}], "tools": TOOLS},
+                        headers={**BEARER, "X-AngryRobot-Run": run}).json()
+        assert r["angryrobot"]["verdict"] == "KILL" and "kill" in r["angryrobot"]["enforcement"]
+        v = client.get(f"/v1/live/calls/{run}", headers=ADMIN).json()
+        assert v["status"] == "killed"                       # la consola se entera de que la cortó la plataforma
+        assert any("plataforma" in (e.get("text") or "") for e in v["events"])
+    finally:
+        client.post("/v1/workflows/live/control", json={"action": "resume", "note": "fin del test"}, headers=ADMIN)
 
 
 def test_the_console_sees_the_call_as_a_round(monkeypatch):
