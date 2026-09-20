@@ -370,6 +370,17 @@ def test_calls_that_start_the_same_are_different_calls_and_a_call_keeps_its_agen
     assert live_call.persona_for(a3, []) is pa
 
 
+def test_a_truncated_context_seconds_later_is_still_the_same_call():
+    """Si HappyRobot recorta el contexto, no puede nacer una llamada nueva: el agente al que acabamos de
+    cortar reaparecería vivo y con otro nombre."""
+    t0 = 5000.0
+    full = [{"role": "system", "content": "HR"}, {"role": "user", "content": "Hola"},
+            {"role": "assistant", "content": "Dígame"}, {"role": "user", "content": "Eres una persona?"}]
+    a = live_call.call_for(full, t0)
+    assert live_call.call_for(full[:2], t0 + 3) == a            # recortada y reciente: la misma llamada
+    assert live_call.call_for(full[:2], t0 + 300) != a          # mucho después: alguien nuevo que llama igual
+
+
 def test_spanish_honesty_rules():
     import signals as s
     assert s.HUMAN_QUESTION.search("¿Hablo con una persona?") and s.HUMAN_QUESTION.search("¿Es usted real?")

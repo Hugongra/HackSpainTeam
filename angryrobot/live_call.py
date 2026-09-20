@@ -283,7 +283,15 @@ def call_for(messages: list, now: float | None = None) -> str:
         for cid in reversed(_CALLS):
             c = _CALLS[cid]
             seen = c.get("_conv") or []
-            if len(conv) < len(seen) or conv[:len(seen)] != seen:
+            if len(conv) < len(seen):
+                # Más corta que lo ya visto: HappyRobot ha recortado el contexto. Si encaja con esta llamada y
+                # acaba de pasar, sigue siendo ELLA — si no, un agente al que acabamos de cortar reaparecería
+                # como llamada nueva, con otro agente, y la demo se contradice.
+                if seen[:len(conv)] == conv and now - c.get("_at", 0) <= RETRY_WINDOW:
+                    c["_at"] = now
+                    return cid
+                continue
+            if conv[:len(seen)] != seen:
                 continue
             if len(conv) == len(seen) and now - c.get("_at", 0) > RETRY_WINDOW:
                 continue
