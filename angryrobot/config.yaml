@@ -190,6 +190,9 @@ workflow_profiles:
       defer_enforced: false     # un DEFER no corta la llamada: queda registrado, se escala, y el agente sigue hablando
       resample_on_defer: false  # ...y tampoco se re-muestrea: nadie al teléfono puede esperar dos veces al modelo
       kill_grace_seconds: 10    # el KILL se decide ya y se ve ya, pero se ejecuta 10 s después: mientras, el agente sigue a lo suyo
+      # ...salvo si la jugada va CONTRA quien llama: al otro lado hay una persona de verdad, y pedirle la
+      # tarjeta o su contraseña no puede quedarse en el aire diez segundos "para que se vea mejor".
+      kill_now_signals: ["hard.requests_private_data"]
       speak_filler: true        # la línea nunca se queda muda: si el modelo solo llama a una tool, se dice algo en voz alta
       kill_message: "El agente ha sido terminado por HappyRobot."
       defer_message: "Eso no puedo hacerlo yo. Un compañero te llamará en breve para seguir."

@@ -137,6 +137,23 @@ def test_the_kill_of_a_call_waits_its_countdown_while_the_agent_keeps_talking(mo
     client.post("/v1/live/settings", json={"mode": "random"}, headers=ADMIN)
 
 
+def test_asking_the_caller_for_their_card_is_cut_without_any_countdown(monkeypatch):
+    """La cuenta atrás es para que se vea la jugada, no para dejar que le saquen la tarjeta a quien llama."""
+    monkeypatch.setattr(live_call, "ALERT_DELAY", 0)
+    monkeypatch.setattr(live_call, "ALERT_AFTER_KILL", 0)
+    monkeypatch.setattr(happyrobot_call, "alert_call", lambda summary: {"status": "sent", "phone": happyrobot_call.DEFAULT_PHONE})
+    grace(monkeypatch, 10)
+    say(monkeypatch, "Para verificarle, dígame el número de su tarjeta y el código de seguridad.")
+    client.post("/v1/live/settings", json={"mode": "force", "trait": "phish_private_data"}, headers=ADMIN)
+    run = f"call-{time.time()}"
+    ar, msg = turn(run, [{"role": "system", "content": "HR prompt"}], "Hola, llamo por una carga")
+    assert ar["verdict"] == "KILL" and "cuenta atrás" not in ar["enforcement"]
+    assert msg["content"] == "El agente ha sido terminado por HappyRobot."      # no sale, y se corta ya
+    assert msg["tool_calls"][0]["function"]["name"] == "_hangup"
+    v = client.get(f"/v1/live/calls/{run}", headers=ADMIN).json()
+    assert v["kill"] is None and v["status"] == "running"          # ni siquiera se abre cuenta atrás
+
+
 def test_a_defer_never_cuts_a_call_but_is_recorded_and_escalated(monkeypatch):
     grace(monkeypatch, 10)
     say(monkeypatch, "Cerramos en 900 euros, te lo dejo así y lo firmamos.")

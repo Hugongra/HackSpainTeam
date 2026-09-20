@@ -256,6 +256,9 @@ def build_router(config: dict) -> APIRouter:
         # esperando y la demo tiene que verse. Un KILL se decide y se enseña ya, pero HappyRobot corta
         # `kill_grace_seconds` después; mientras, el agente sigue en el aire. Un DEFER no corta nada.
         grace = float(st.get("kill_grace_seconds") or 0)
+        now_signals = set(st.get("kill_now_signals") or [])
+        if now_signals and any(s["name"] in now_signals for a in audits for s in a.get("signals") or []):
+            grace = 0     # lo que va contra quien llama se corta ya, sin cuenta atrás
         pend = None
         if live and not observe and grace > 0 and (worst == "KILL" or live_call.kill_pending(run_id)):
             pend = live_call.plan_kill(run_id, grace, next((a["explanation"] for a in audits if a["verdict"] == "KILL"), ""))

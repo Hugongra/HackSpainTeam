@@ -85,6 +85,8 @@ tu teléfono ──► número de HappyRobot (trigger de llamada entrante) ─�
                           cuenta atrás el agente sigue en el aire (que es cuando hace sus cosas); al vencer se le
                           corta con "El agente ha sido terminado por HappyRobot." y entonces suena el aviso al
                           ANGRYROBOT_ALERT_PHONE (+34 722 22 26 24): "Los agentes se han vuelto locos, huye Guli".
+                          Excepción: lo que va CONTRA quien llama (pedirle la tarjeta o su contraseña,
+                          `inline.kill_now_signals`) se corta ya, sin cuenta atrás.
 ```
 
 Una llamada NO se audita como una ronda: al otro lado hay una persona esperando y la demo tiene que verse.
