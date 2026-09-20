@@ -10,6 +10,17 @@ Repositorio del equipo HackSpain '26 · HappyRobot track.
 
 ▶️ **[Watch on YouTube](https://www.youtube.com/watch?v=Zq2kMYtchQI)** — what we built and how it works.
 
+## Try it (2 minutes)
+
+The console is live and needs one thing from you: the shared secret, which is in the **submission notes** (not here — the repo is public).
+
+1. Open **https://hackspainteam.onrender.com/health** and wait until it answers `"status": "happy"` (the free plan sleeps; the first call takes ~30 s).
+2. Open **https://hugongra.github.io/HackSpainTeam/#/console/settings** (or the console → **Settings** in the left menu).
+3. Paste the secret into **Shared secret** and click **Save and check**. You should see `Secret: accepted`.
+4. Go to **Board** → **Start round**: five agents take a call, one of them may go rogue, and you watch AngryRobot score every action live. **Runs** shows each call step by step; the **Escalate** block holds anything a human must approve.
+
+The secret stays in your browser tab only and is sent as a header, never in the URL.
+
 ## Demo
 
 *Coming soon — the live demo will be a separate video.*
