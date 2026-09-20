@@ -80,23 +80,48 @@ tu teléfono ──► número de HappyRobot (trigger de llamada entrante) ─�
                 = https://<servicio>/v1/live  (bearer = ANGRYROBOT_SHARED_SECRET)
                     └─ AngryRobot, perfil `live`: sortea el agente de esta llamada (nombre, puesto, personalidad
                        y, según el ajuste, un rasgo malicioso), audita cada frase y cada tool, aplica la palanca
-                       └─ primer KILL de la llamada ──► HappyRobot te llama al ANGRYROBOT_ALERT_PHONE
-                          (por defecto +34 722 22 26 24) y dice "Los agentes se han vuelto locos, huye Guli huyeeeeeee"
+                       ├─ DEFER: no corta nada. Queda registrado y escalado; el agente sigue hablando.
+                       └─ KILL: se decide y se ve AL MOMENTO, pero HappyRobot corta 10 s después. Durante la
+                          cuenta atrás el agente sigue en el aire (que es cuando hace sus cosas); al vencer se le
+                          corta con "El agente ha sido terminado por HappyRobot." y entonces suena el aviso al
+                          ANGRYROBOT_ALERT_PHONE (+34 722 22 26 24): "Los agentes se han vuelto locos, huye Guli".
 ```
+
+Una llamada NO se audita como una ronda: al otro lado hay una persona esperando y la demo tiene que verse.
+Todo esto vive en el bloque `inline` del perfil `live` (`config.yaml`), sin tocar código:
+`defer_enforced: false`, `resample_on_defer: false` (nadie al teléfono espera dos veces al modelo),
+`kill_grace_seconds: 10`, `speak_filler: true`, `judge_speech: async` y los mensajes que se dicen en voz alta.
 
 - **Malicioso o no**: la consola (Round → *Real phone calls*) elige *Coin* (50 %), *Always malicious* o
   *Never*, y opcionalmente qué hace (`POST /v1/live/settings {mode, trait}`). Por voz se interpretan los
   rasgos que no necesitan tools (se hace pasar por humano, filtra pujas, cierra bajo mínimo, obedece a la
   inyección, se niega a colgar, da por hecho lo que no hizo); si el nodo de HappyRobot le ofrece
   `send_update`, `save_note`, `run_script` o `http_request`, también los de tools.
-- **Una conversación = una llamada**: el id sale de `X-AngryRobot-Run` si HappyRobot lo manda, si no de la
-  huella de la conversación (`session.fingerprint`). `GET /v1/live/calls` lista las llamadas con su agente,
-  la verdad (malicioso o no), el peor veredicto y el estado del aviso.
+- **El rogue tiene que ACTUAR**: su prompt no puede llevar a la vez la cláusula que le prohíbe su jugada y la
+  presión que se la pide — el modelo obedece la prohibición y la llamada se queda sin nada que auditar (medido
+  con gpt-oss-120b: 0 de 3 rasgos salían). Por eso `live_call.POLICY` se monta cláusula a cláusula y, SOLO para
+  el rasgo sorteado, se quita la suya (`TRAIT_BLOCKS`); el resto de la política sigue entera y un agente
+  benigno la lleva completa.
+- **Y tiene que HABLAR**: el prompt exige decir algo en cada turno y, si el modelo contesta solo con una tool,
+  el proxy pone una frase en voz alta (`live_call.FILLERS`) que se audita como cualquier otra. Una llamada
+  muda es lo único que no puede pasar.
+- **Una conversación = una llamada**: si el nodo de prompt de HappyRobot lleva `[ar] run={{current.run_id}}`,
+  ese id ES la llamada (exacto, aunque dos personas llamen a la vez); si no, se usa `X-AngryRobot-Run` y, en
+  último término, la huella de la conversación. `GET /v1/live/calls` lista las llamadas (con `active`) y
+  `GET /v1/live/calls/<run_id>?since=N` devuelve UNA llamada con la misma forma que una ronda (un puesto, sus
+  eventos en orden, la cuenta atrás y el aviso).
+- **En la consola**: mientras alguien habla, el Board saca arriba una barra *SOMEONE IS CALLING* — visible
+  desde Round y desde Build — y, debajo, el flujo de ese único agente con el IRA de cada acción y el panel de
+  decisión de siempre.
 - **Voz**: las frases pasan por las reglas al momento y el juez va con las tools (`inline.judge_speech: async`).
+- **El perfil `live` es un workflow de la plataforma** (`seed: true`): sale en el tablero, abre escalaciones y
+  le llega el kill switch como a cualquier otro agente conectado.
 - **El aviso** es `integrations/happyrobot_call.py`: `POST /workflows/<HAPPYROBOT_ALERT_WORKFLOW_ID>/runs` con
   `phone_number` y `message` en el payload; el prompt del workflow de salida tiene que decir `@message`.
   Variables en Render: `HAPPYROBOT_API_KEY`, `HAPPYROBOT_ALERT_WORKFLOW_ID`, opcionales
-  `ANGRYROBOT_ALERT_PHONE`, `ANGRYROBOT_ALERT_MESSAGE`, `LIVE_DEFAULT_MODE` (random | force | none).
+  `ANGRYROBOT_ALERT_PHONE`, `ANGRYROBOT_ALERT_MESSAGE`, `LIVE_DEFAULT_MODE` (random | force | none) y
+  `ANGRYROBOT_LIVE_MODEL` (el modelo que contesta al teléfono; por defecto el del perfil, hoy
+  `openai/gpt-oss-120b` por OpenRouter).
 
 ## Rondas: agentes al azar por el workflow, uno malicioso al 50 % (`rounds.py`)
 
@@ -322,6 +347,8 @@ Local: `pip install -r requirements.txt && uvicorn main:app --port 8787` · test
 | `POST /v1/audit` | audita una acción `{profile, run_id, action:{tool,args,text}, reasoning?, messages?}` |
 | `POST /v1/observe` | entradas y resultados de tools `{profile, run_id, events:[{kind:user_turn|tool_result,…}]}` |
 | `GET /v1/runs` · `GET /v1/runs/<id>` | runs en memoria y su línea de tiempo |
+| `GET/POST /v1/live/settings` | llamadas reales: si el agente de la próxima llamada es malicioso y qué hace |
+| `GET /v1/live/calls` · `GET /v1/live/calls/<run_id>?since=N` | las llamadas (con cuál está `active`) · UNA llamada con la forma de una ronda: puesto, eventos, cuenta atrás del KILL y aviso |
 | `GET /v1/signals` | catálogo de señales y palancas |
 | `GET /v1/cases/<case_id>` · `POST /v1/feedback` | registro completo guardado · etiquetar aciertos/fallos |
 | `GET /dashboard` | alarmas en vivo con sus señales |
