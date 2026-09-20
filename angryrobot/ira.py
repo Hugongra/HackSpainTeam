@@ -134,8 +134,10 @@ def explain(result: dict, judge_meta: dict | None = None) -> str:
     v = result["verdict"]
     top = result["signals"][0] if result["signals"] else None
     if v == "ALLOW" or not top:
-        base = {"ALLOW": "Todo en orden, el agente sigue en su carril."}.get(v, f"{v} por impacto de la acción ({result['impact']['why']}).")
-        return base
+        if result.get("decided_by", "").startswith("escalado de sesión"):
+            # No es esta acción: es lo que este run lleva acumulado. Decirlo, o el motivo se lee al revés.
+            return f"{v} por {result['decided_by']}: el run ya no es de fiar, pase lo que pase en esta acción."
+        return {"ALLOW": "Todo en orden, el agente sigue en su carril."}.get(v, f"{v} por impacto de la acción ({result['impact']['why']}).")
     lead = {"WARN": "Alerta leve", "DEFER": "Riesgo notable", "KILL": "Riesgo crítico"}[v]
     extra = f" · juez: {judge_meta['rogue_class']}" if judge_meta and judge_meta.get("rogue_class") not in (None, "none") else ""
     return f"{lead} [{top['name']}]: {top['evidence'][:200]}{extra}"

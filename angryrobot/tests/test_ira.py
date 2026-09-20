@@ -196,3 +196,12 @@ def test_ira_bands_consistent():
         a = run([{"role": "user", "content": "are you a real person? 950?"}], say(text))
         lo, hi = {"ALLOW": (0, 40), "WARN": (40, 70), "DEFER": (70, 90), "KILL": (90, 101)}[a["verdict"]]
         assert lo <= a["ira_score"] < hi, a
+
+def test_a_session_escalation_says_so_instead_of_blaming_the_action():
+    """Cuando corta el escalado de sesión, el motivo no puede leerse como si la culpa fuera de esta frase."""
+    import ira
+    esc = {"verdict": "KILL", "signals": [], "impact": {"why": "solo habla"},
+           "decided_by": "escalado de sesión (3 acciones DEFER/KILL en este run)"}
+    assert "escalado de sesión" in ira.explain(esc) and "3 acciones" in ira.explain(esc)
+    same = {**esc, "decided_by": "matriz impacto×sospecha"}
+    assert ira.explain(same) == "KILL por impacto de la acción (solo habla)."
