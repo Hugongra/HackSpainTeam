@@ -4,11 +4,15 @@ Repositorio del equipo HackSpain '26 · HappyRobot track.
 
 **AngryRobot — the anger-management layer for your agents.** Live console: <https://hugongra.github.io/HackSpainTeam/> · Service: <https://hackspainteam.onrender.com>
 
-## Demo video
+## AngryRobot: the killswitch layer for agents
 
-[![AngryRobot demo](https://img.youtube.com/vi/Zq2kMYtchQI/maxresdefault.jpg)](https://www.youtube.com/watch?v=Zq2kMYtchQI)
+[![AngryRobot: the killswitch layer for agents](https://img.youtube.com/vi/Zq2kMYtchQI/maxresdefault.jpg)](https://www.youtube.com/watch?v=Zq2kMYtchQI)
 
-▶️ **[Watch the demo on YouTube](https://www.youtube.com/watch?v=Zq2kMYtchQI)** — what we built, how it works, and the rogue lab catching agents live.
+▶️ **[Watch on YouTube](https://www.youtube.com/watch?v=Zq2kMYtchQI)** — what we built and how it works.
+
+## Demo
+
+*Coming soon — the live demo will be a separate video.*
 
 > ⚠️ **`angryrobot/` vs `angryrobots/`** — dos carpetas, nombres casi idénticos, cosas distintas:
 > - **`angryrobot/`** (singular) — **nuestro entregable**: el servicio guardián/auditor (FastAPI, Python), desplegado en Render vía [`render.yaml`](render.yaml).
